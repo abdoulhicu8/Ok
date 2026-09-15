@@ -1,0 +1,6 @@
+{
+  "name": "Text to Speech Studio",
+  "description": "Text to speech tool with customizable speaking instructions, multi-language support, and audio download.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
