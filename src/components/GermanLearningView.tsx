@@ -33,6 +33,7 @@ import { GERMAN_PRONUNCIATION_SOUNDS, CHALLENGING_GERMAN_WORDS } from "../data/g
 import { GERMAN_SCENARIOS } from "../data/germanScenarios";
 import { GERMAN_LISTENING_EXERCISES, ListeningExercise } from "../data/germanListening";
 import { GermanLevelPage } from "./GermanLevelPage";
+import { toggleMasteredVocab, recordLearningActivity } from "../utils/progressUtils";
 
 interface GermanLearningViewProps {
   progress: UserProgress;
@@ -40,6 +41,9 @@ interface GermanLearningViewProps {
   onQuickTTS: (text: string, instructions?: string, lang?: string) => void;
   onLaunchScenarioInChat: (scenarioId: string) => void;
   activeSubTab?: string;
+  initialLevel?: GermanLevel | null;
+  initialLessonId?: string | null;
+  initialCategoryFilter?: string | null;
 }
 
 export const GermanLearningView: React.FC<GermanLearningViewProps> = ({
@@ -48,13 +52,18 @@ export const GermanLearningView: React.FC<GermanLearningViewProps> = ({
   onQuickTTS,
   onLaunchScenarioInChat,
   activeSubTab = "roadmap",
+  initialLevel = null,
+  initialLessonId = null,
+  initialCategoryFilter = null,
 }) => {
   const [currentTab, setCurrentTab] = useState<GermanTab>(
     (activeSubTab as GermanTab) || "roadmap"
   );
 
   // Active CEFR Level Page (A1, A2, B1, B2, C1)
-  const [activeLevelPage, setActiveLevelPage] = useState<GermanLevel | null>(null);
+  const [activeLevelPage, setActiveLevelPage] = useState<GermanLevel | null>(
+    initialLevel || (initialLessonId ? "A1" : null)
+  );
 
   // Vocabulary filters
   const [selectedLevel, setSelectedLevel] = useState<GermanLevel | "ALL">("ALL");
@@ -114,16 +123,7 @@ export const GermanLearningView: React.FC<GermanLearningViewProps> = ({
   };
 
   const toggleMastered = (id: string) => {
-    onUpdateProgress((prev) => {
-      const exists = prev.masteredVocabIds.includes(id);
-      return {
-        ...prev,
-        masteredVocabIds: exists
-          ? prev.masteredVocabIds.filter((item) => item !== id)
-          : [...prev.masteredVocabIds, id],
-        xp: exists ? prev.xp - 10 : prev.xp + 25,
-      };
-    });
+    onUpdateProgress((prev) => toggleMasteredVocab(prev, id));
   };
 
   const handleFlashcardGrade = (difficulty: "hard" | "good" | "easy") => {
@@ -143,11 +143,11 @@ export const GermanLearningView: React.FC<GermanLearningViewProps> = ({
       activeListening.missingWordsExercise.correctWord.toLowerCase();
     setDictationResult(isCorrect ? "correct" : "incorrect");
     if (isCorrect) {
-      onUpdateProgress((prev) => ({
-        ...prev,
-        xp: prev.xp + 20,
-        quizzesCompleted: prev.quizzesCompleted + 1,
-      }));
+      onUpdateProgress((prev) =>
+        recordLearningActivity(prev, 20, {
+          quizzesCompleted: prev.quizzesCompleted + 1,
+        })
+      );
     }
   };
 
@@ -186,6 +186,8 @@ export const GermanLearningView: React.FC<GermanLearningViewProps> = ({
         onUpdateProgress={onUpdateProgress}
         onQuickTTS={onQuickTTS}
         onLaunchScenarioInChat={onLaunchScenarioInChat}
+        initialLessonId={initialLessonId}
+        initialCategoryFilter={initialCategoryFilter}
       />
     );
   }

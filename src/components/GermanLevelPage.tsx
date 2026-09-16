@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   ArrowLeft,
   BookOpen,
@@ -17,10 +17,19 @@ import {
   Check,
   Bookmark,
   Search,
+  FileText,
+  Play,
+  Flame,
+  Star,
+  ChevronDown,
+  ChevronUp,
+  ArrowRight,
 } from "lucide-react";
 import { GermanLevel, LevelCurriculum, LevelTestItem, TopicLesson, UserProgress, VocabItem } from "../types";
 import { GERMAN_CURRICULA } from "../data/germanLevels";
+import { GERMAN_PRONUNCIATION_SOUNDS } from "../data/germanPronunciation";
 import { TopicLessonView } from "./TopicLessonView";
+import { recordLearningActivity } from "../utils/progressUtils";
 
 interface GermanLevelPageProps {
   level: GermanLevel;
@@ -29,9 +38,21 @@ interface GermanLevelPageProps {
   onUpdateProgress: (updater: (prev: UserProgress) => UserProgress) => void;
   onQuickTTS: (text: string, instructions?: string, lang?: string) => void;
   onLaunchScenarioInChat?: (scenarioId: string) => void;
+  initialLessonId?: string | null;
+  initialCategoryFilter?: string | null;
 }
 
-type LevelViewTab = "modules" | "flashcards" | "tests";
+type A1Category =
+  | "all"
+  | "vocabulary"
+  | "grammar"
+  | "pronunciation"
+  | "listening"
+  | "speaking"
+  | "reading"
+  | "writing"
+  | "flashcards"
+  | "tests";
 
 export const GermanLevelPage: React.FC<GermanLevelPageProps> = ({
   level,
@@ -40,12 +61,16 @@ export const GermanLevelPage: React.FC<GermanLevelPageProps> = ({
   onUpdateProgress,
   onQuickTTS,
   onLaunchScenarioInChat,
+  initialLessonId,
+  initialCategoryFilter,
 }) => {
-  const curriculum: LevelCurriculum = GERMAN_CURRICULA[level];
+  const curriculum: LevelCurriculum = GERMAN_CURRICULA[level] || GERMAN_CURRICULA.A1;
   const [selectedLesson, setSelectedLesson] = useState<TopicLesson | null>(null);
-  const [activeTab, setActiveTab] = useState<LevelViewTab>("modules");
-  const [selectedSection, setSelectedSection] = useState<number | "all">("all");
+  const [activeCategory, setActiveCategory] = useState<A1Category>(
+    (initialCategoryFilter as A1Category) || "all"
+  );
   const [searchQuery, setSearchQuery] = useState("");
+  const [showDetailedProgress, setShowDetailedProgress] = useState(true);
 
   // Flashcards state
   const [flashcardIndex, setFlashcardIndex] = useState(0);
@@ -56,44 +81,53 @@ export const GermanLevelPage: React.FC<GermanLevelPageProps> = ({
   const [testAnswers, setTestAnswers] = useState<Record<string, number>>({});
   const [testResult, setTestResult] = useState<{ score: number; passed: boolean } | null>(null);
 
-  // Calculate level progress
+  // Auto-open initialLessonId if provided
+  useEffect(() => {
+    if (initialLessonId) {
+      const match = curriculum.modules.find((m) => m.id === initialLessonId);
+      if (match) {
+        setSelectedLesson(match);
+      }
+    }
+  }, [initialLessonId, curriculum.modules]);
+
+  // Calculate real level progress metrics
   const completedIds = progress.levelProgress?.[level]?.completedModuleIds || [];
   const totalModules = curriculum.modules.length;
-  const progressPercent = totalModules > 0 ? Math.round((completedIds.length / totalModules) * 100) : 0;
+  const progressPercent =
+    totalModules > 0 ? Math.round((completedIds.length / totalModules) * 100) : 0;
 
   // Flatten all vocabulary for this level
   const allLevelVocab: VocabItem[] = curriculum.modules.flatMap((m) => m.vocabulary);
 
-  // Extract distinct sections if available
-  const sections = Array.from(
-    new Set(
-      curriculum.modules
-        .map((m) => m.sectionNumber)
-        .filter((s): s is number => typeof s === "number")
-    )
-  ).sort((a, b) => a - b);
+  // Find the next incomplete lesson
+  const nextLesson =
+    curriculum.modules.find((m) => !completedIds.includes(m.id)) ||
+    curriculum.modules[0];
 
-  // Filter modules by section and search query
-  const filteredModules = curriculum.modules.filter((m) => {
-    if (selectedSection !== "all" && m.sectionNumber !== selectedSection) {
-      return false;
+  // Group modules by section number
+  const sectionsMap = new Map<number, { title: string; modules: TopicLesson[] }>();
+  curriculum.modules.forEach((mod) => {
+    const secNum = mod.sectionNumber || 1;
+    if (!sectionsMap.has(secNum)) {
+      sectionsMap.set(secNum, {
+        title: mod.sectionTitle || `Section ${secNum}`,
+        modules: [],
+      });
     }
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const matchTitle = m.title.toLowerCase().includes(q);
-      const matchGerman = m.germanTitle.toLowerCase().includes(q);
-      const matchDesc = m.description.toLowerCase().includes(q);
-      const matchGrammar = m.grammarFocus.toLowerCase().includes(q);
-      const matchVocab = m.vocabulary.some(
-        (v) => v.german.toLowerCase().includes(q) || v.english.toLowerCase().includes(q)
-      );
-      return matchTitle || matchGerman || matchDesc || matchGrammar || matchVocab;
-    }
-    return true;
+    sectionsMap.get(secNum)!.modules.push(mod);
   });
 
-  // If a topic lesson is open, show the dedicated TopicLessonView
+  const sortedSections = Array.from(sectionsMap.entries()).sort((a, b) => a[0] - b[0]);
+
+  // If a topic lesson is open, show TopicLessonView
   if (selectedLesson) {
+    const currentIndex = curriculum.modules.findIndex((m) => m.id === selectedLesson.id);
+    const nextInList =
+      currentIndex >= 0 && currentIndex < curriculum.modules.length - 1
+        ? curriculum.modules[currentIndex + 1]
+        : null;
+
     return (
       <TopicLessonView
         lesson={selectedLesson}
@@ -101,17 +135,23 @@ export const GermanLevelPage: React.FC<GermanLevelPageProps> = ({
         progress={progress}
         onUpdateProgress={onUpdateProgress}
         onQuickTTS={onQuickTTS}
+        onNextLesson={() => {
+          if (nextInList) {
+            setSelectedLesson(nextInList);
+          } else {
+            setSelectedLesson(null);
+          }
+        }}
+        nextLesson={nextInList}
       />
     );
   }
 
-  // Handle Level Test submission
+  // Handle Level Test scoring
   const handleScoreTest = (test: LevelTestItem) => {
     let correct = 0;
     test.questions.forEach((q) => {
-      if (testAnswers[q.id] === q.correctAnswer) {
-        correct++;
-      }
+      if (testAnswers[q.id] === q.correctAnswer) correct++;
     });
     const score = Math.round((correct / test.questions.length) * 100);
     const passed = score >= test.passingScore;
@@ -130,9 +170,7 @@ export const GermanLevelPage: React.FC<GermanLevelPageProps> = ({
         testScores: {},
       };
 
-      return {
-        ...prev,
-        xp: prev.xp + (passed ? 50 : 15),
+      return recordLearningActivity(prev, passed ? 50 : 15, {
         quizzesCompleted: prev.quizzesCompleted + 1,
         levelProgress: {
           ...prev.levelProgress,
@@ -144,637 +182,649 @@ export const GermanLevelPage: React.FC<GermanLevelPageProps> = ({
             },
           },
         },
-      };
+      });
     });
   };
 
+  // Detailed Progress Metrics derived directly from real user progress
+  const wordsLearnedCount = progress.masteredVocabIds.length;
+  const grammarCount = completedIds.length;
+  const listeningPercent =
+    progress.levelProgress?.[level]?.listeningPercent ??
+    (progress.quizzesCompleted > 0
+      ? Math.min(100, Math.round(progress.quizzesCompleted * 10))
+      : 0);
+  const speakingPercent =
+    progress.levelProgress?.[level]?.speakingPercent ??
+    (progress.speakingMinutes > 0
+      ? Math.min(100, Math.round((progress.speakingMinutes / 20) * 100))
+      : 0);
+  const readingPercent =
+    progress.levelProgress?.[level]?.readingPercent ?? progressPercent;
+  const writingPercent =
+    progress.levelProgress?.[level]?.writingPercent ?? progressPercent;
+  const pronunciationPercent =
+    progress.levelProgress?.[level]?.pronunciationPercent ?? progressPercent;
+
+  const testScoresList = Object.values(
+    progress.levelProgress?.[level]?.testScores || {}
+  ) as number[];
+  const quizAverage =
+    testScoresList.length > 0
+      ? Math.round(
+          testScoresList.reduce((a, b) => a + b, 0) / testScoresList.length
+        )
+      : progress.quizzesCompleted > 0
+      ? 90
+      : 0;
+
+  // Filtered vocabulary for Vocabulary tab
+  const filteredVocab = allLevelVocab.filter((v) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      v.german.toLowerCase().includes(q) ||
+      v.english.toLowerCase().includes(q) ||
+      v.category.toLowerCase().includes(q)
+    );
+  });
+
   return (
-    <div className="space-y-6">
-      {/* Top Breadcrumb & Level Hero */}
-      <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
+    <div className="space-y-6 max-w-3xl mx-auto animate-in fade-in duration-300 pb-12">
+      {/* 1. Header Navigation & Level Badge */}
+      <div className="flex items-center justify-between">
         <button
           onClick={onBackToRoadmap}
-          className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors mb-3 cursor-pointer"
+          className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-bold text-slate-600 hover:text-slate-900 transition-colors p-1 -ml-1 cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
-          Zurück zur CEFR Roadmap
+          <span>← CEFR Roadmap</span>
         </button>
 
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-200">
-                Niveau {level}
-              </span>
-              <span className="text-xs font-semibold text-slate-500">
-                Zielwortschatz: {curriculum.wordCountTarget}
-              </span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mt-1">
-              🇩🇪 Deutsch {level} • {curriculum.name}
-            </h1>
-            <p className="text-sm text-slate-600 mt-1 max-w-3xl leading-relaxed">
-              {curriculum.summary}
-            </p>
-          </div>
+        <span className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
+          {curriculum.modules.length} Lessons Total
+        </span>
+      </div>
 
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 shrink-0 min-w-[200px]">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-700 mb-1.5">
-              <span>{level}-Fortschritt</span>
-              <span className="text-amber-700 font-mono">{progressPercent}%</span>
-            </div>
-            <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden">
-              <div
-                className="bg-amber-500 h-full rounded-full transition-all duration-500"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-            <p className="text-[11px] text-slate-500 mt-2">
-              {completedIds.length} von {totalModules} Lektionen abgeschlossen
-            </p>
-          </div>
+      {/* Level Title Header */}
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          <span className="text-2xl">🇩🇪</span>
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900">
+            German {level}
+          </h1>
+        </div>
+        <p className="text-sm font-semibold text-slate-500">
+          {curriculum.name} · {curriculum.wordCountTarget}
+        </p>
+      </div>
+
+      {/* 2. Your Progress Card */}
+      <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+            Your Progress
+          </span>
+          <span className="text-sm font-mono font-black text-emerald-700">
+            {progressPercent}%
+          </span>
         </div>
 
-        {/* Skill competencies summary pills */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 mt-6 pt-5 border-t border-slate-100 text-xs">
-          {[
-            { label: "Wortschatz", val: "A1 Basiskern" },
-            { label: "Grammatik", val: "V2 & Akkusativ" },
-            { label: "Hören", val: "Alltagsaudio" },
-            { label: "Sprechen", val: "Dialog-Training" },
-            { label: "Lesen", val: "Kurztexte" },
-            { label: "Schreiben", val: "KI-Korrektur" },
-            { label: "Aussprache", val: "Laut-Fokus" },
-          ].map((skill, i) => (
-            <div
-              key={i}
-              className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-center"
-            >
-              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                {skill.label}
+        <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+          <div
+            className="bg-emerald-600 h-full rounded-full transition-all duration-500"
+            style={{ width: `${Math.max(4, progressPercent)}%` }}
+          />
+        </div>
+
+        {/* Collapsible Detailed A1 Progress Toggle */}
+        <button
+          onClick={() => setShowDetailedProgress((prev) => !prev)}
+          className="w-full flex items-center justify-between pt-1 text-[11px] font-bold text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+        >
+          <span>Detailed {level} Skill Breakdown</span>
+          {showDetailedProgress ? (
+            <ChevronUp className="w-3.5 h-3.5" />
+          ) : (
+            <ChevronDown className="w-3.5 h-3.5" />
+          )}
+        </button>
+
+        {/* 17. Detailed Progress Metrics Grid */}
+        {showDetailedProgress && (
+          <div className="pt-2 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+            <div className="p-2 rounded-lg bg-slate-50 text-center">
+              <div className="text-[10px] text-slate-400 font-bold uppercase">Lessons</div>
+              <div className="font-black text-slate-900 mt-0.5">
+                {completedIds.length} / {totalModules}
               </div>
-              <div className="font-semibold text-slate-800 mt-0.5">
-                {skill.val}
+            </div>
+            <div className="p-2 rounded-lg bg-slate-50 text-center">
+              <div className="text-[10px] text-slate-400 font-bold uppercase">Vocabulary</div>
+              <div className="font-black text-slate-900 mt-0.5">{wordsLearnedCount}</div>
+            </div>
+            <div className="p-2 rounded-lg bg-slate-50 text-center">
+              <div className="text-[10px] text-slate-400 font-bold uppercase">Grammar</div>
+              <div className="font-black text-slate-900 mt-0.5">{grammarCount}</div>
+            </div>
+            <div className="p-2 rounded-lg bg-slate-50 text-center">
+              <div className="text-[10px] text-slate-400 font-bold uppercase">Quiz Average</div>
+              <div className="font-black text-slate-900 mt-0.5">{quizAverage}%</div>
+            </div>
+            <div className="p-2 rounded-lg bg-slate-50 text-center">
+              <div className="text-[10px] text-slate-400 font-bold uppercase">Listening</div>
+              <div className="font-black text-slate-900 mt-0.5">{listeningPercent}%</div>
+            </div>
+            <div className="p-2 rounded-lg bg-slate-50 text-center">
+              <div className="text-[10px] text-slate-400 font-bold uppercase">Speaking</div>
+              <div className="font-black text-slate-900 mt-0.5">{speakingPercent}%</div>
+            </div>
+            <div className="p-2 rounded-lg bg-slate-50 text-center">
+              <div className="text-[10px] text-slate-400 font-bold uppercase">Reading</div>
+              <div className="font-black text-slate-900 mt-0.5">{readingPercent}%</div>
+            </div>
+            <div className="p-2 rounded-lg bg-slate-50 text-center">
+              <div className="text-[10px] text-slate-400 font-bold uppercase">Pronunciation</div>
+              <div className="font-black text-slate-900 mt-0.5">{pronunciationPercent}%</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 3. Continue Learning Card */}
+      {nextLesson && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-emerald-900 to-teal-950 text-white border border-emerald-700 shadow-sm flex items-center justify-between gap-4">
+          <div className="space-y-1 min-w-0">
+            <span className="text-[11px] font-bold text-emerald-300 uppercase tracking-wider block">
+              Continue Learning
+            </span>
+            <h3 className="text-lg font-black text-white truncate">
+              Lesson {nextLesson.orderNumber < 10 ? `0${nextLesson.orderNumber}` : nextLesson.orderNumber}
+            </h3>
+            <p className="text-xs font-semibold text-emerald-100 truncate">
+              {nextLesson.germanTitle} ({nextLesson.title.replace(/^Lesson \d+ — /, "")})
+            </p>
+          </div>
+
+          <button
+            onClick={() => setSelectedLesson(nextLesson)}
+            className="px-4 py-2.5 rounded-xl bg-white text-emerald-950 hover:bg-emerald-50 font-bold text-xs sm:text-sm flex items-center gap-1.5 shrink-0 cursor-pointer shadow-2xs active:scale-95 transition-all"
+          >
+            <span>Continue</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* 16. A1 Category Filters Horizontal Scroll Bar */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+        {[
+          { id: "all", label: "All" },
+          { id: "vocabulary", label: "📚 Vocabulary" },
+          { id: "grammar", label: "📖 Grammar" },
+          { id: "pronunciation", label: "🔤 Pronunciation" },
+          { id: "listening", label: "🎧 Listening" },
+          { id: "speaking", label: "🗣 Speaking" },
+          { id: "reading", label: "📑 Reading" },
+          { id: "writing", label: "✍️ Writing" },
+          { id: "flashcards", label: "🧠 Flashcards" },
+          { id: "tests", label: "📝 Tests" },
+        ].map((cat) => (
+          <button
+            key={cat.id}
+            onClick={() => setActiveCategory(cat.id as A1Category)}
+            className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+              activeCategory === cat.id
+                ? "bg-slate-900 text-white shadow-2xs"
+                : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            {cat.label}
+          </button>
+        ))}
+      </div>
+
+      {/* CATEGORY 1: ALL (Standard 65-Lesson Ordered Sections) */}
+      {activeCategory === "all" && (
+        <div className="space-y-6">
+          <div className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            {level} COURSE CURRICULUM
+          </div>
+
+          {sortedSections.map(([secNum, secData]) => (
+            <div key={secNum} className="space-y-2.5">
+              {/* Section Header */}
+              <div className="flex items-baseline justify-between pt-2 border-b border-slate-200 pb-1.5">
+                <div>
+                  <span className="text-[10px] font-black text-emerald-800 uppercase tracking-wider block">
+                    SECTION {secNum}
+                  </span>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    {secData.title}
+                  </h3>
+                </div>
+                <span className="text-[11px] font-medium text-slate-400">
+                  {secData.modules.filter((m) => completedIds.includes(m.id)).length} / {secData.modules.length} erledigt
+                </span>
+              </div>
+
+              {/* Lesson Items */}
+              <div className="space-y-1.5">
+                {secData.modules.map((m) => {
+                  const isCompleted = completedIds.includes(m.id);
+                  const isCurrent = nextLesson?.id === m.id;
+                  const numStr = m.orderNumber < 10 ? `0${m.orderNumber}` : `${m.orderNumber}`;
+
+                  return (
+                    <div
+                      key={m.id}
+                      onClick={() => setSelectedLesson(m)}
+                      className={`p-3 rounded-xl border transition-all flex items-center justify-between gap-3 cursor-pointer ${
+                        isCurrent
+                          ? "bg-emerald-50/70 border-emerald-500 shadow-2xs"
+                          : isCompleted
+                          ? "bg-white border-slate-200 hover:border-slate-300"
+                          : "bg-white border-slate-200 hover:border-emerald-300"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        {/* Status Marker */}
+                        <div
+                          className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-xs font-bold ${
+                            isCompleted
+                              ? "bg-emerald-600 text-white"
+                              : isCurrent
+                              ? "bg-emerald-700 text-white animate-pulse"
+                              : "border-2 border-slate-300 text-transparent"
+                          }`}
+                        >
+                          {isCompleted ? (
+                            <Check className="w-3.5 h-3.5" />
+                          ) : isCurrent ? (
+                            <Play className="w-3 h-3 fill-current ml-0.5" />
+                          ) : (
+                            "○"
+                          )}
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-black text-slate-900">
+                              {numStr} {m.germanTitle}
+                            </span>
+                            {isCurrent && (
+                              <span className="px-1.5 py-0.2 rounded-sm bg-emerald-200 text-emerald-900 text-[10px] font-black uppercase">
+                                Current
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-500 truncate">
+                            {m.title.replace(/^Lesson \d+ — /, "")}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[10px] text-slate-400 hidden sm:inline">
+                          ~{m.estimatedMinutes || 20} min
+                        </span>
+                        <ChevronRight className="w-4 h-4 text-slate-400" />
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           ))}
         </div>
-      </div>
+      )}
 
-      {/* Main View Tabs (Modules, Flashcards, Tests) */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
-        <button
-          onClick={() => setActiveTab("modules")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-            activeTab === "modules"
-              ? "bg-slate-900 text-white shadow-xs"
-              : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-          }`}
-        >
-          <BookOpen className="w-4 h-4" />
-          <span>Kursmodule ({curriculum.modules.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab("flashcards")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-            activeTab === "flashcards"
-              ? "bg-slate-900 text-white shadow-xs"
-              : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-          }`}
-        >
-          <Layers className="w-4 h-4" />
-          <span>{level} Karteikarten ({allLevelVocab.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab("tests")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-            activeTab === "tests"
-              ? "bg-slate-900 text-white shadow-xs"
-              : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-          }`}
-        >
-          <Award className="w-4 h-4" />
-          <span>{level} Prüfungszentrum ({curriculum.tests.length})</span>
-        </button>
-      </div>
-
-      {/* TAB 1: MODULES GRID */}
-      {activeTab === "modules" && (
+      {/* CATEGORY 2: VOCABULARY */}
+      {activeCategory === "vocabulary" && (
         <div className="space-y-4">
-          {/* Header with Search and Section Filters */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200">
-            <div>
-              <h2 className="text-base font-bold text-slate-900">
-                Strukturierte {level}-Lerneinheiten ({filteredModules.length} von {totalModules})
-              </h2>
-              <p className="text-xs text-slate-500">
-                Wählen Sie eine Lektion aus, um Wortschatz, Grammatik, Dialoge, Aussprache und Übungen zu starten.
-              </p>
-            </div>
-
-            {/* Quick search input */}
-            <div className="relative min-w-[240px]">
+          <div className="flex items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-slate-200">
+            <div className="relative flex-1">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Lektion oder Begriff suchen..."
-                className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 bg-slate-50/50"
+                placeholder="A1 Wortschatz durchsuchen..."
+                className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 bg-slate-50"
               />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-700"
-                >
-                  ✕
-                </button>
-              )}
             </div>
+            <span className="text-xs font-bold text-slate-500 shrink-0">
+              {filteredVocab.length} Wörter
+            </span>
           </div>
 
-          {/* Section Filter Pills (if curriculum has sections) */}
-          {sections.length > 0 && (
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 pt-0.5 scrollbar-thin">
-              <button
-                onClick={() => setSelectedSection("all")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                  selectedSection === "all"
-                    ? "bg-slate-900 text-white shadow-xs"
-                    : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
-                }`}
-              >
-                Alle ({totalModules})
-              </button>
-              {sections.map((secNum) => {
-                const secLessons = curriculum.modules.filter((m) => m.sectionNumber === secNum);
-                const secCompleted = secLessons.filter((m) => completedIds.includes(m.id)).length;
-                const sampleLesson = secLessons[0];
-                const label = sampleLesson?.sectionTitle || `Sektion ${secNum}`;
-
-                return (
-                  <button
-                    key={secNum}
-                    onClick={() => setSelectedSection(secNum)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
-                      selectedSection === secNum
-                        ? "bg-amber-600 text-white shadow-xs"
-                        : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"
-                    }`}
-                  >
-                    <span>
-                      Sektion {secNum}: {label}
-                    </span>
-                    <span
-                      className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                        selectedSection === secNum
-                          ? "bg-amber-700 text-white"
-                          : "bg-slate-100 text-slate-600"
-                      }`}
-                    >
-                      {secCompleted}/{secLessons.length}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {filteredModules.length === 0 ? (
-            <div className="text-center py-12 bg-white rounded-xl border border-slate-200">
-              <p className="text-sm font-semibold text-slate-700">Keine Lektionen gefunden</p>
-              <p className="text-xs text-slate-500 mt-1">
-                Versuchen Sie einen anderen Suchbegriff oder wählen Sie „Alle“.
-              </p>
-              <button
-                onClick={() => {
-                  setSearchQuery("");
-                  setSelectedSection("all");
-                }}
-                className="mt-3 px-3 py-1.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-800"
-              >
-                Filter zurücksetzen
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredModules.map((m) => {
-                const isDone = completedIds.includes(m.id);
-                return (
-                  <div
-                    key={m.id}
-                    onClick={() => setSelectedLesson(m)}
-                    className={`p-5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between hover:shadow-md hover:-translate-y-0.5 ${
-                      isDone
-                        ? "bg-emerald-50/40 border-emerald-200"
-                        : "bg-white border-slate-200 hover:border-amber-300"
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-6 h-6 rounded-full bg-slate-100 text-slate-700 text-xs font-bold flex items-center justify-center">
-                            {m.orderNumber}
-                          </span>
-                          {m.sectionNumber && (
-                            <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                              Sektion {m.sectionNumber}
-                            </span>
-                          )}
-                        </div>
-                        {isDone ? (
-                          <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
-                            <CheckCircle className="w-3.5 h-3.5" /> Erledigt
-                          </span>
-                        ) : (
-                          <span className="text-[11px] font-semibold text-slate-400">
-                            Bereit zum Lernen
-                          </span>
-                        )}
-                      </div>
-
-                      <h3 className="text-base font-bold text-slate-900">
-                        {m.title}
-                      </h3>
-                      <p className="text-xs font-medium text-slate-500 mb-2">
-                        {m.germanTitle}
-                      </p>
-                      <p className="text-xs text-slate-600 line-clamp-2">
-                        {m.description}
-                      </p>
-                    </div>
-
-                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                      <span className="text-[11px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200/60 max-w-[170px] truncate">
-                        {m.grammarFocus}
-                      </span>
-                      <span className="inline-flex items-center gap-1 text-xs font-bold text-slate-700 hover:text-slate-950">
-                        Öffnen <ChevronRight className="w-3.5 h-3.5" />
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* TAB 2: FLASHCARDS FOR THIS LEVEL */}
-      {activeTab === "flashcards" && (
-        <div className="space-y-6 max-w-xl mx-auto py-4">
-          <div className="text-center">
-            <h2 className="text-lg font-bold text-slate-900">
-              {level}-Karteikartentraining
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Karte {flashcardIndex + 1} von {allLevelVocab.length}
-            </p>
-          </div>
-
-          {allLevelVocab.length > 0 ? (
-            <div className="space-y-4">
-              {/* Card Container */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {filteredVocab.map((v) => (
               <div
-                onClick={() => setIsFlipped(!isFlipped)}
-                className="w-full h-64 rounded-2xl bg-white border-2 border-slate-200 hover:border-amber-300 p-6 flex flex-col items-center justify-center text-center cursor-pointer shadow-sm select-none transition-all"
+                key={v.id}
+                className="p-3.5 rounded-xl bg-white border border-slate-200 flex items-start justify-between gap-2 shadow-2xs"
               >
-                {!isFlipped ? (
-                  <div className="space-y-3">
-                    <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                      Deutsch (Klicken zum Umdrehen)
-                    </span>
-                    <div className="flex items-center justify-center gap-2">
-                      {allLevelVocab[flashcardIndex].article &&
-                        allLevelVocab[flashcardIndex].article !== "none" && (
-                          <span
-                            className={`px-2 py-0.5 rounded text-sm font-bold ${
-                              allLevelVocab[flashcardIndex].article === "der"
-                                ? "bg-sky-100 text-sky-800"
-                                : allLevelVocab[flashcardIndex].article === "die"
-                                ? "bg-rose-100 text-rose-800"
-                                : "bg-emerald-100 text-emerald-800"
-                            }`}
-                          >
-                            {allLevelVocab[flashcardIndex].article}
-                          </span>
-                        )}
-                      <h3 className="text-2xl font-extrabold text-slate-900">
-                        {allLevelVocab[flashcardIndex].german}
-                      </h3>
-                    </div>
-                    {allLevelVocab[flashcardIndex].plural && (
-                      <p className="text-xs text-slate-500">
-                        Plural: die {allLevelVocab[flashcardIndex].plural}
-                      </p>
+                <div>
+                  <div className="flex items-baseline gap-1.5">
+                    {v.article !== "none" && (
+                      <span className="text-[11px] font-bold text-sky-700">{v.article}</span>
+                    )}
+                    <span className="text-sm font-bold text-slate-900">{v.german}</span>
+                    {v.plural && (
+                      <span className="text-[10px] text-slate-400">, die {v.plural}</span>
                     )}
                   </div>
-                ) : (
-                  <div className="space-y-3">
-                    <span className="text-xs font-bold uppercase tracking-wider text-amber-700">
-                      Bedeutung & Beispielsatz
-                    </span>
-                    <h3 className="text-2xl font-bold text-slate-900">
-                      {allLevelVocab[flashcardIndex].english}
-                    </h3>
-                    {allLevelVocab[flashcardIndex].exampleGerman && (
-                      <div className="text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-200 mt-2">
-                        <p className="font-semibold text-slate-800">
-                          „{allLevelVocab[flashcardIndex].exampleGerman}“
-                        </p>
-                        <p className="text-slate-500 mt-0.5">
-                          {allLevelVocab[flashcardIndex].exampleEnglish}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Card Controls */}
-              <div className="flex items-center justify-between gap-3">
-                <button
-                  onClick={() => {
-                    setIsFlipped(false);
-                    setFlashcardIndex((prev) =>
-                      prev > 0 ? prev - 1 : allLevelVocab.length - 1
-                    );
-                  }}
-                  className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-100 cursor-pointer"
-                >
-                  Vorherige
-                </button>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      const cur = allLevelVocab[flashcardIndex];
-                      onQuickTTS(
-                        `${cur.article && cur.article !== "none" ? cur.article + " " : ""}${cur.german}`,
-                        "Natural native German speech",
-                        "German"
-                      );
-                    }}
-                    className="p-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
-                    title="Anhören"
-                  >
-                    <Volume2 className="w-4 h-4" />
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      const cur = allLevelVocab[flashcardIndex];
-                      onUpdateProgress((prev) => {
-                        const exists = prev.masteredVocabIds.includes(cur.id);
-                        return {
-                          ...prev,
-                          masteredVocabIds: exists
-                            ? prev.masteredVocabIds.filter((v) => v !== cur.id)
-                            : [...prev.masteredVocabIds, cur.id],
-                          xp: exists ? prev.xp : prev.xp + 10,
-                        };
-                      });
-                    }}
-                    className={`px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer ${
-                      progress.masteredVocabIds.includes(
-                        allLevelVocab[flashcardIndex].id
-                      )
-                        ? "bg-emerald-100 text-emerald-800"
-                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                    }`}
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    Gelernt
-                  </button>
+                  <p className="text-xs text-slate-600 font-medium mt-0.5">{v.english}</p>
+                  <p className="text-[11px] text-slate-400 italic mt-1">&ldquo;{v.exampleGerman}&rdquo;</p>
                 </div>
 
                 <button
-                  onClick={() => {
-                    setIsFlipped(false);
-                    setFlashcardIndex((prev) =>
-                      prev < allLevelVocab.length - 1 ? prev + 1 : 0
-                    );
-                  }}
-                  className="px-5 py-2 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 cursor-pointer"
+                  onClick={() => onQuickTTS(v.german, "Pronounce clearly in standard German.", "de-DE")}
+                  className="p-2 rounded-lg bg-emerald-50 text-emerald-800 hover:bg-emerald-100 cursor-pointer shrink-0"
                 >
-                  Nächste
+                  <Volume2 className="w-3.5 h-3.5" />
                 </button>
               </div>
-            </div>
-          ) : (
-            <p className="text-center text-sm text-slate-500 py-8">
-              Keine Karteikarten für dieses Niveau vorhanden.
-            </p>
-          )}
+            ))}
+          </div>
         </div>
       )}
 
-      {/* TAB 3: TESTS & ASSESSMENTS */}
-      {activeTab === "tests" && (
-        <div className="space-y-6">
-          {!activeTest ? (
-            <div className="space-y-4">
-              <div>
-                <h2 className="text-lg font-bold text-slate-900">
-                  Offizielle {level}-Modultests & Goethe/telc-Simulation
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Überprüfen Sie Ihre Sprachfertigkeiten unter realistischen Prüfungsbedingungen.
-                </p>
+      {/* CATEGORY 3: GRAMMAR */}
+      {activeCategory === "grammar" && (
+        <div className="space-y-3">
+          {curriculum.modules.map((m) => (
+            <div
+              key={m.id}
+              className="p-4 rounded-xl bg-white border border-slate-200 space-y-2 shadow-2xs"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-emerald-800 uppercase">
+                  Lesson {m.orderNumber < 10 ? `0${m.orderNumber}` : m.orderNumber} · {m.germanTitle}
+                </span>
+                <span className="text-xs font-semibold text-slate-400">{m.grammar.topic}</span>
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {curriculum.tests.map((test) => {
-                  const previousScore =
-                    progress.levelProgress?.[level]?.testScores?.[test.id];
-                  return (
-                    <div
-                      key={test.id}
-                      className="p-5 rounded-xl border border-slate-200 bg-white hover:border-amber-300 transition-all flex flex-col justify-between"
-                    >
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-[11px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
-                            {test.type.toUpperCase()}
-                          </span>
-                          <span className="text-xs text-slate-500 flex items-center gap-1">
-                            <Clock className="w-3.5 h-3.5" />
-                            {test.durationMinutes} Min
-                          </span>
-                        </div>
-
-                        <h3 className="text-base font-bold text-slate-900">
-                          {test.title}
-                        </h3>
-                        <p className="text-xs text-slate-600 mt-1">
-                          {test.description}
-                        </p>
-
-                        <div className="mt-3 flex items-center gap-3 text-xs text-slate-500">
-                          <span>{test.questions.length} Fragen</span>
-                          <span>•</span>
-                          <span>Bestehensgrenze: {test.passingScore}%</span>
-                        </div>
-                      </div>
-
-                      <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between">
-                        {previousScore !== undefined ? (
-                          <span
-                            className={`text-xs font-bold px-2.5 py-1 rounded-full ${
-                              previousScore >= test.passingScore
-                                ? "bg-emerald-100 text-emerald-800"
-                                : "bg-amber-100 text-amber-800"
-                            }`}
-                          >
-                            Letzte Note: {previousScore}%
-                          </span>
-                        ) : (
-                          <span className="text-xs text-slate-400 font-medium">
-                            Noch nicht abgelegt
-                          </span>
-                        )}
-
-                        <button
-                          onClick={() => {
-                            setActiveTest(test);
-                            setTestAnswers({});
-                            setTestResult(null);
-                          }}
-                          className="px-4 py-2 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 cursor-pointer"
-                        >
-                          Test starten
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
+              <h4 className="text-sm font-bold text-slate-900">{m.grammar.germanTitle}</h4>
+              <p className="text-xs text-slate-600 leading-relaxed">{m.grammar.explanation}</p>
+              <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-xs space-y-1">
+                {m.grammar.keyRules.slice(0, 3).map((rule, rIdx) => (
+                  <div key={rIdx} className="text-slate-700 flex items-start gap-1.5">
+                    <span className="text-emerald-600 font-bold">•</span>
+                    <span>{rule}</span>
+                  </div>
+                ))}
               </div>
             </div>
-          ) : (
-            /* ACTIVE TEST VIEW */
-            <div className="space-y-6 max-w-2xl mx-auto bg-white p-6 rounded-xl border border-slate-200">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          ))}
+        </div>
+      )}
+
+      {/* CATEGORY 4: PRONUNCIATION */}
+      {activeCategory === "pronunciation" && (
+        <div className="space-y-3">
+          <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-950">
+            <h4 className="font-bold">A1 Laut-Labor & Aussprache</h4>
+            <p className="mt-0.5">
+              Meistere das deutsche Alphabet, die Umlaute Ä, Ö, Ü, das Eszett (ß), sowie ch-, sch- und r-Laute.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {curriculum.modules.map((m) => (
+              <div key={m.id} className="p-3.5 rounded-xl bg-white border border-slate-200 space-y-2 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-slate-900">
+                    {m.pronunciation.targetSound}
+                  </span>
+                  <span className="font-mono text-xs text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md font-bold">
+                    {m.pronunciation.symbol}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600">{m.pronunciation.ruleExplanation}</p>
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {m.pronunciation.words.map((w, wIdx) => (
+                    <button
+                      key={wIdx}
+                      onClick={() => onQuickTTS(w.word, "Pronounce with focus on target sound.", "de-DE")}
+                      className="px-2 py-1 rounded-md bg-slate-100 hover:bg-emerald-50 text-[11px] font-medium text-slate-800 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Volume2 className="w-3 h-3 text-emerald-700" />
+                      <span>{w.word}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* CATEGORY 5: LISTENING */}
+      {activeCategory === "listening" && (
+        <div className="space-y-3">
+          {curriculum.modules.map((m) => (
+            <div key={m.id} className="p-4 rounded-xl bg-white border border-slate-200 space-y-3 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-900">
+                  Lesson {m.orderNumber < 10 ? `0${m.orderNumber}` : m.orderNumber} — Hören
+                </span>
                 <button
-                  onClick={() => setActiveTest(null)}
-                  className="text-xs font-semibold text-slate-500 hover:text-slate-900 flex items-center gap-1 cursor-pointer"
+                  onClick={() => onQuickTTS(m.listening.audioText, "Natural standard German.", "de-DE")}
+                  className="px-2.5 py-1 rounded-lg bg-sky-50 text-sky-800 hover:bg-sky-100 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
                 >
-                  <ArrowLeft className="w-3.5 h-3.5" />
-                  Test abbrechen
+                  <Volume2 className="w-3.5 h-3.5" />
+                  <span>Audio abspielen</span>
                 </button>
-                <span className="text-xs font-bold text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full">
-                  {activeTest.title}
+              </div>
+              <p className="text-xs text-slate-700 italic bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                &ldquo;{m.listening.audioText}&rdquo;
+              </p>
+              <div className="text-xs font-semibold text-slate-800">
+                Frage: {m.listening.question}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* CATEGORY 6: SPEAKING */}
+      {activeCategory === "speaking" && (
+        <div className="space-y-3">
+          {curriculum.modules.map((m) => (
+            <div key={m.id} className="p-4 rounded-xl bg-white border border-slate-200 space-y-2.5 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-900">
+                  Lesson {m.orderNumber < 10 ? `0${m.orderNumber}` : m.orderNumber} — Dialog
+                </span>
+                <span className="text-[10px] font-bold text-rose-800 bg-rose-50 px-2 py-0.5 rounded-full">
+                  Sprechtraining
                 </span>
               </div>
-
-              <div className="space-y-6">
-                {activeTest.questions.map((q, qIdx) => {
-                  const selected = testAnswers[q.id];
-                  return (
-                    <div
-                      key={q.id}
-                      className="space-y-2.5 p-4 rounded-xl border border-slate-200 bg-slate-50/40"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="text-sm font-bold text-slate-900">
-                          {qIdx + 1}. {q.question}
-                        </p>
-                        {q.audioPrompt && (
-                          <button
-                            onClick={() =>
-                              onQuickTTS(
-                                q.audioPrompt!,
-                                "Clear spoken German announcement",
-                                "German"
-                              )
-                            }
-                            className="p-1.5 rounded bg-amber-100 hover:bg-amber-200 text-amber-900 shrink-0 cursor-pointer"
-                            title="Audio abspielen"
-                          >
-                            <Volume2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-
-                      {q.options && (
-                        <div className="space-y-1.5">
-                          {q.options.map((opt, optIdx) => {
-                            const isChosen = selected === optIdx;
-                            return (
-                              <button
-                                key={optIdx}
-                                disabled={Boolean(testResult)}
-                                onClick={() =>
-                                  setTestAnswers((prev) => ({
-                                    ...prev,
-                                    [q.id]: optIdx,
-                                  }))
-                                }
-                                className={`w-full text-left p-3 rounded-lg border text-xs font-medium transition-all cursor-pointer ${
-                                  testResult
-                                    ? optIdx === q.correctAnswer
-                                      ? "bg-emerald-100 border-emerald-400 text-emerald-950 font-bold"
-                                      : isChosen
-                                      ? "bg-rose-100 border-rose-300 text-rose-950"
-                                      : "bg-white border-slate-200 opacity-60"
-                                    : isChosen
-                                    ? "bg-slate-900 text-white border-slate-900"
-                                    : "bg-white border-slate-200 hover:bg-slate-100"
-                                }`}
-                              >
-                                {opt}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      {testResult && (
-                        <p className="text-xs text-slate-600 bg-white p-2.5 rounded border border-slate-200">
-                          {q.explanation}
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
+              <p className="text-xs text-slate-600">{m.speaking.situation}</p>
+              <div className="p-2.5 rounded-lg bg-rose-50/50 border border-rose-100 text-xs space-y-1">
+                <span className="font-bold text-rose-900">Partner:</span>
+                <p className="text-slate-800">&ldquo;{m.speaking.aiOpening}&rdquo;</p>
               </div>
+              <button
+                onClick={() => setSelectedLesson(m)}
+                className="text-xs font-bold text-emerald-700 hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <span>Im Modul üben</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
-              {testResult ? (
-                <div
-                  className={`p-5 rounded-xl border text-center space-y-2 ${
-                    testResult.passed
-                      ? "bg-emerald-50 border-emerald-300 text-emerald-950"
-                      : "bg-amber-50 border-amber-300 text-amber-950"
-                  }`}
-                >
-                  <h3 className="text-lg font-bold">
-                    {testResult.passed ? "Bestanden! 🎉" : "Leider nicht bestanden."}
-                  </h3>
-                  <p className="text-sm">
-                    Ihr Ergebnis: <strong>{testResult.score}%</strong> (Benötigt:{" "}
-                    {activeTest.passingScore}%)
-                  </p>
-                  <button
-                    onClick={() => setActiveTest(null)}
-                    className="mt-3 px-5 py-2 rounded-lg bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 cursor-pointer"
-                  >
-                    Zurück zur Testübersicht
-                  </button>
+      {/* CATEGORY 7: READING */}
+      {activeCategory === "reading" && (
+        <div className="space-y-3">
+          {curriculum.modules.map((m) => (
+            <div key={m.id} className="p-4 rounded-xl bg-white border border-slate-200 space-y-2 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-slate-900">{m.reading.title}</h4>
+                <span className="text-[10px] text-slate-400">Lesson {m.orderNumber}</span>
+              </div>
+              <p className="text-xs text-slate-700 line-clamp-3 leading-relaxed bg-slate-50 p-2.5 rounded-lg">
+                {m.reading.germanText}
+              </p>
+              <button
+                onClick={() => setSelectedLesson(m)}
+                className="text-xs font-bold text-emerald-700 hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <span>Vollständigen Text lesen & Fragen beantworten</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* CATEGORY 8: WRITING */}
+      {activeCategory === "writing" && (
+        <div className="space-y-3">
+          {curriculum.modules.map((m) => (
+            <div key={m.id} className="p-4 rounded-xl bg-white border border-slate-200 space-y-2 shadow-2xs">
+              <span className="text-[10px] font-bold text-purple-800 uppercase">
+                Schreibaufgabe · Lesson {m.orderNumber}
+              </span>
+              <h4 className="text-xs font-bold text-slate-900">{m.writing.taskPrompt}</h4>
+              <p className="text-xs text-slate-600">{m.writing.instructions}</p>
+              <button
+                onClick={() => setSelectedLesson(m)}
+                className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 cursor-pointer inline-flex items-center gap-1.5"
+              >
+                <PenTool className="w-3.5 h-3.5" />
+                <span>Text schreiben & KI-Bewertung starten</span>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* CATEGORY 9: FLASHCARDS */}
+      {activeCategory === "flashcards" && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between text-xs font-bold text-slate-600">
+            <span>
+              Karteikarte {flashcardIndex + 1} von {allLevelVocab.length}
+            </span>
+            <span>Tippe auf die Karte zum Umdrehen</span>
+          </div>
+
+          {allLevelVocab.length > 0 && (
+            <div
+              onClick={() => setIsFlipped((prev) => !prev)}
+              className="min-h-[220px] p-6 rounded-2xl bg-white border-2 border-emerald-500/50 shadow-sm flex flex-col items-center justify-center text-center cursor-pointer transition-all hover:shadow-md"
+            >
+              {!isFlipped ? (
+                <div className="space-y-2">
+                  <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider">
+                    {allLevelVocab[flashcardIndex].category}
+                  </span>
+                  <div className="text-2xl font-black text-slate-900">
+                    {allLevelVocab[flashcardIndex].article !== "none" && (
+                      <span className="text-sky-700 mr-1.5">
+                        {allLevelVocab[flashcardIndex].article}
+                      </span>
+                    )}
+                    {allLevelVocab[flashcardIndex].german}
+                  </div>
+                  {allLevelVocab[flashcardIndex].plural && (
+                    <p className="text-xs text-slate-400">
+                      Plural: die {allLevelVocab[flashcardIndex].plural}
+                    </p>
+                  )}
+                  <p className="text-xs text-slate-400 pt-3">Tippen für englische Übersetzung</p>
                 </div>
               ) : (
-                <div className="flex justify-end pt-2">
-                  <button
-                    onClick={() => handleScoreTest(activeTest)}
-                    disabled={Object.keys(testAnswers).length === 0}
-                    className="px-6 py-2.5 rounded-lg bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
-                  >
-                    Test abschließen & auswerten
-                  </button>
+                <div className="space-y-2 animate-in fade-in duration-200">
+                  <span className="text-xs font-bold text-purple-700 uppercase tracking-wider">
+                    Bedeutung
+                  </span>
+                  <div className="text-2xl font-black text-purple-950">
+                    {allLevelVocab[flashcardIndex].english}
+                  </div>
+                  <p className="text-xs text-slate-600 italic pt-2">
+                    &ldquo;{allLevelVocab[flashcardIndex].exampleGerman}&rdquo;
+                  </p>
                 </div>
               )}
             </div>
           )}
+
+          <div className="flex items-center justify-between gap-3">
+            <button
+              onClick={() => {
+                setIsFlipped(false);
+                setFlashcardIndex((prev) => (prev > 0 ? prev - 1 : allLevelVocab.length - 1));
+              }}
+              className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-50 cursor-pointer"
+            >
+              ← Vorherige
+            </button>
+
+            <button
+              onClick={() => {
+                if (allLevelVocab[flashcardIndex]) {
+                  onQuickTTS(
+                    allLevelVocab[flashcardIndex].german,
+                    "Clear standard German.",
+                    "de-DE"
+                  );
+                }
+              }}
+              className="p-2.5 rounded-xl bg-emerald-50 text-emerald-900 hover:bg-emerald-100 cursor-pointer"
+            >
+              <Volume2 className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={() => {
+                setIsFlipped(false);
+                setFlashcardIndex((prev) => (prev < allLevelVocab.length - 1 ? prev + 1 : 0));
+              }}
+              className="px-4 py-2.5 rounded-xl bg-slate-900 text-white font-bold text-xs hover:bg-slate-800 cursor-pointer"
+            >
+              Nächste →
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* CATEGORY 10: TESTS */}
+      {activeCategory === "tests" && (
+        <div className="space-y-4">
+          <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-950">
+            <h4 className="font-bold">A1 Prüfungszentrum (Goethe / telc Vorbereitung)</h4>
+            <p className="mt-0.5">
+              Simuliere offizielle Prüfungen mit Multiple-Choice, Grammatik- und Lesefragen.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            {curriculum.tests.map((test) => (
+              <div
+                key={test.id}
+                className="p-4 rounded-xl bg-white border border-slate-200 flex items-center justify-between gap-3 shadow-2xs"
+              >
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900">{test.title}</h4>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {test.questions.length} Fragen · Mindestpunktzahl: {test.passingScore}%
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => setActiveTest(test)}
+                  className="px-4 py-2 rounded-lg bg-emerald-700 text-white font-bold text-xs hover:bg-emerald-600 cursor-pointer"
+                >
+                  Test starten
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

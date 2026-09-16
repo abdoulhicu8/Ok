@@ -18,6 +18,8 @@ import {
   Lightbulb,
 } from "lucide-react";
 import { TopicLesson, UserProgress, VocabItem } from "../types";
+import { ArrowRight } from "lucide-react";
+import { toggleMasteredVocab, recordLearningActivity } from "../utils/progressUtils";
 
 interface TopicLessonViewProps {
   lesson: TopicLesson;
@@ -25,6 +27,8 @@ interface TopicLessonViewProps {
   progress: UserProgress;
   onUpdateProgress: (updater: (prev: UserProgress) => UserProgress) => void;
   onQuickTTS: (text: string, instructions?: string, lang?: string) => void;
+  onNextLesson?: () => void;
+  nextLesson?: TopicLesson | null;
 }
 
 type TopicTab =
@@ -45,6 +49,8 @@ export const TopicLessonView: React.FC<TopicLessonViewProps> = ({
   progress,
   onUpdateProgress,
   onQuickTTS,
+  onNextLesson,
+  nextLesson,
 }) => {
   const [activeTab, setActiveTab] = useState<TopicTab>(
     lesson.learnContent ? "learn" : "vocabulary"
@@ -96,16 +102,7 @@ export const TopicLessonView: React.FC<TopicLessonViewProps> = ({
   };
 
   const toggleMastered = (id: string) => {
-    onUpdateProgress((prev) => {
-      const exists = prev.masteredVocabIds.includes(id);
-      return {
-        ...prev,
-        masteredVocabIds: exists
-          ? prev.masteredVocabIds.filter((v) => v !== id)
-          : [...prev.masteredVocabIds, id],
-        xp: exists ? prev.xp : prev.xp + 10,
-      };
-    });
+    onUpdateProgress((prev) => toggleMasteredVocab(prev, id));
   };
 
   const markModuleCompleted = () => {
@@ -127,9 +124,8 @@ export const TopicLessonView: React.FC<TopicLessonViewProps> = ({
 
       const newCompleted = [...currentLevelProgress.completedModuleIds, lesson.id];
 
-      return {
-        ...prev,
-        xp: prev.xp + 50,
+      return recordLearningActivity(prev, 25, {
+        currentLessonId: nextLesson?.id || lesson.id,
         levelProgress: {
           ...prev.levelProgress,
           [lesson.level]: {
@@ -137,7 +133,7 @@ export const TopicLessonView: React.FC<TopicLessonViewProps> = ({
             completedModuleIds: newCompleted,
           },
         },
-      };
+      });
     });
   };
 
@@ -159,7 +155,11 @@ export const TopicLessonView: React.FC<TopicLessonViewProps> = ({
       if (res.ok) {
         const data = await res.json();
         setSpeechEvaluation(data);
-        onUpdateProgress((prev) => ({ ...prev, xp: prev.xp + 20, speakingMinutes: prev.speakingMinutes + 1 }));
+        onUpdateProgress((prev) =>
+          recordLearningActivity(prev, 20, {
+            speakingMinutes: prev.speakingMinutes + 1,
+          })
+        );
       }
     } catch (err) {
       console.error(err);
@@ -186,7 +186,7 @@ export const TopicLessonView: React.FC<TopicLessonViewProps> = ({
       if (res.ok) {
         const data = await res.json();
         setWritingFeedback(data);
-        onUpdateProgress((prev) => ({ ...prev, xp: prev.xp + 30 }));
+        onUpdateProgress((prev) => recordLearningActivity(prev, 30));
       }
     } catch (err) {
       console.error(err);
@@ -202,11 +202,11 @@ export const TopicLessonView: React.FC<TopicLessonViewProps> = ({
       if (quizAnswers[idx] === q.correctIndex) correct++;
     });
     if (correct > 0) {
-      onUpdateProgress((prev) => ({
-        ...prev,
-        xp: prev.xp + correct * 10,
-        quizzesCompleted: prev.quizzesCompleted + 1,
-      }));
+      onUpdateProgress((prev) =>
+        recordLearningActivity(prev, correct * 10, {
+          quizzesCompleted: prev.quizzesCompleted + 1,
+        })
+      );
     }
   };
 
@@ -1521,6 +1521,48 @@ export const TopicLessonView: React.FC<TopicLessonViewProps> = ({
             </div>
           </div>
         )}
+      </div>
+
+      {/* Lesson Completion Card */}
+      <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-br from-emerald-900 to-teal-950 text-white border border-emerald-700 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 text-emerald-300 font-bold text-sm">
+            <CheckCircle className="w-5 h-5 text-emerald-400" />
+            <span>{isCompleted ? "✓ Lesson completed" : "Bereit zum Abschluss?"}</span>
+          </div>
+          <div className="text-lg sm:text-xl font-black text-white">
+            {isCompleted ? "XP +25 verdient!" : "Schließe die Lektion ab für +25 XP"}
+          </div>
+          {nextLesson && (
+            <div className="text-xs text-emerald-200 mt-1">
+              Next: <span className="font-bold text-white">Lesson {nextLesson.orderNumber < 10 ? `0${nextLesson.orderNumber}` : nextLesson.orderNumber} — {nextLesson.germanTitle}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2.5">
+          {!isCompleted && (
+            <button
+              onClick={markModuleCompleted}
+              className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+            >
+              Lektion abschließen (+25 XP)
+            </button>
+          )}
+
+          {nextLesson && onNextLesson && (
+            <button
+              onClick={() => {
+                if (!isCompleted) markModuleCompleted();
+                onNextLesson();
+              }}
+              className="px-5 py-2.5 rounded-xl bg-white text-emerald-950 hover:bg-emerald-50 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition-all"
+            >
+              <span>Continue →</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

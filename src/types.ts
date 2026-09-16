@@ -317,6 +317,8 @@ export interface LevelCurriculum {
 }
 
 export interface UserProgress {
+  userName?: string;
+  currentLessonId?: string;
   currentLevel: GermanLevel;
   streakDays: number;
   lastActiveDate: string;

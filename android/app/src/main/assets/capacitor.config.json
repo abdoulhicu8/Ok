@@ -1,0 +1,11 @@
+{
+	"appId": "com.deutschakademie.learn",
+	"appName": "Deutsch Akademie",
+	"webDir": "dist",
+	"server": {
+		"androidScheme": "https"
+	},
+	"android": {
+		"allowMixedContent": true
+	}
+}

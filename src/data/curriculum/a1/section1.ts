@@ -830,8 +830,11 @@ export const A1_SECTION_1_LESSONS: TopicLesson[] = [
         "sein (irregular) → ich bin (25 Jahre alt)",
       ],
       examples: [
+        { german: "Ich heiße Abdoul.", english: "My name is Abdoul." },
+        { german: "Ich bin 24 Jahre alt.", english: "I am 24 years old." },
+        { german: "Ich komme aus Burundi.", english: "I come from Burundi." },
+        { german: "Ich wohne in Sharjah.", english: "I live in Sharjah." },
         { german: "Ich lerne Deutsch.", english: "I am learning German." },
-        { german: "Ich spreche Englisch und ein bisschen Deutsch.", english: "I speak English and a little German." },
       ],
       tips: "Do not say 'Ich bin heiße'. Choose either 'Ich bin Peter' OR 'Ich heiße Peter'. Never combine both!",
     },

@@ -9,6 +9,8 @@ import {
   Home,
   Flame,
   Loader2,
+  User,
+  Star,
 } from "lucide-react";
 import {
   MainTab,
@@ -17,17 +19,24 @@ import {
   VoiceId,
   EmotionType,
   EnergyType,
+  GermanLevel,
 } from "./types";
 import { DashboardView } from "./components/DashboardView";
 import { VoiceStudioView } from "./components/VoiceStudioView";
 import { GermanLearningView } from "./components/GermanLearningView";
 import { AITeacherView } from "./components/AITeacherView";
 import { SettingsView } from "./components/SettingsView";
+import { evaluateStreak } from "./utils/progressUtils";
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<MainTab>("dashboard");
   const [activeGermanSubTab, setActiveGermanSubTab] = useState<string>("roadmap");
   const [activeScenarioId, setActiveScenarioId] = useState<string>("sc-intro");
+
+  // Navigation target states for GermanLearningView / GermanLevelPage
+  const [selectedLevel, setSelectedLevel] = useState<GermanLevel | null>("A1");
+  const [selectedLessonId, setSelectedLessonId] = useState<string | null>(null);
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | null>(null);
 
   // Audio history state
   const [history, setHistory] = useState<TTSItem[]>(() => {
@@ -39,25 +48,65 @@ export default function App() {
     }
   });
 
-  // User learning progress state
+  // User learning progress state with default A1 state matching Lesson 06 active
   const [progress, setProgress] = useState<UserProgress>(() => {
     try {
       const saved = localStorage.getItem("user_german_progress");
       if (saved) return JSON.parse(saved);
     } catch {}
     return {
+      userName: "Abdoul",
       currentLevel: "A1",
+      currentLessonId: "a1-sec1-06",
       streakDays: 5,
       lastActiveDate: new Date().toISOString().slice(0, 10),
-      wordsLearned: 18,
+      wordsLearned: 3,
       quizzesCompleted: 6,
       speakingMinutes: 14,
       bookmarkedVocabIds: ["g-01", "f-01"],
       masteredVocabIds: ["g-01", "g-04", "f-04"],
       weakAreas: ["Dativ Prepositions", "Ä / Ö distinction"],
-      xp: 240,
+      xp: 120,
+      levelProgress: {
+        A1: {
+          completedModuleIds: [
+            "a1-sec1-01",
+            "a1-sec1-02",
+            "a1-sec1-03",
+            "a1-sec1-04",
+            "a1-sec1-05",
+          ],
+          vocabularyPercent: 35,
+          grammarPercent: 30,
+          listeningPercent: 18,
+          speakingPercent: 15,
+          readingPercent: 25,
+          writingPercent: 20,
+          pronunciationPercent: 30,
+          testScores: { "a1-t1": 82 },
+        },
+      },
     };
   });
+
+  // Check and evaluate streak status on app load
+  useEffect(() => {
+    setProgress((prev) => {
+      const { newStreak, newActiveDate } = evaluateStreak(
+        prev.streakDays,
+        prev.lastActiveDate,
+        false
+      );
+      if (newStreak !== prev.streakDays || newActiveDate !== prev.lastActiveDate) {
+        return {
+          ...prev,
+          streakDays: newStreak,
+          lastActiveDate: newActiveDate,
+        };
+      }
+      return prev;
+    });
+  }, []);
 
   // Global Quick TTS Audio Player state
   const [quickAudioLoading, setQuickAudioLoading] = useState(false);
@@ -139,42 +188,50 @@ export default function App() {
       throw new Error(data.error || "Failed to generate speech audio.");
     }
 
+    const audioDataUrl =
+      data.audioData ||
+      (data.audioBase64
+        ? `data:${data.mimeType || "audio/mp3"};base64,${data.audioBase64}`
+        : "");
+
     const newItem: TTSItem = {
-      id: `tts-${Date.now()}`,
-      text: data.text,
-      instructions: data.instructions,
-      language: data.language,
-      languageName: data.languageName,
-      voice: data.voice,
-      audioData: data.audioData,
-      filename: data.filename,
-      duration: data.duration,
+      id: "tts-" + Date.now(),
+      text: params.text,
+      audioData: audioDataUrl,
+      filename: `tts-${Date.now()}.mp3`,
+      duration: data.duration || 3,
       timestamp: Date.now(),
-      emotion: params.emotion,
-      energy: params.energy,
+      voice: params.voice,
+      language: params.language,
+      languageName: params.languageName,
+      emotion: params.emotion || "neutral",
+      energy: params.energy || "medium",
+      instructions: params.instructions,
     };
 
     saveToHistory(newItem);
     return newItem;
   };
 
-  // Instant Quick TTS playback for any word / sentence across the app
+  // Fast one-click German pronunciation TTS
   const handleQuickTTS = async (
-    wordOrSentence: string,
-    instructions = "Pronounce clearly and naturally in German.",
-    lang = "de-DE"
+    text: string,
+    instructions: string = "Speak with clear, standard German Hochdeutsch pronunciation at a natural pace.",
+    lang: string = "de-DE"
   ) => {
     if (quickAudioLoading) return;
     setQuickAudioLoading(true);
-    setQuickAudioPlayingText(wordOrSentence);
+    setQuickAudioPlayingText(text);
 
     try {
       const item = await handleGenerateAudio({
-        text: wordOrSentence,
+        text,
         instructions,
         language: lang,
-        languageName: lang.startsWith("de") ? "German" : "English",
+        languageName: "German",
         voice: "Kore",
+        emotion: "neutral",
+        energy: "medium",
       });
 
       const audio = new Audio(item.audioData);
@@ -182,9 +239,18 @@ export default function App() {
         setQuickAudioPlayingText(null);
       };
       await audio.play();
-    } catch (e) {
-      console.error("Quick TTS failed:", e);
-      setQuickAudioPlayingText(null);
+    } catch (err) {
+      console.warn("Direct TTS error, falling back to Web Speech:", err);
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = lang;
+        utterance.rate = 0.9;
+        utterance.onend = () => setQuickAudioPlayingText(null);
+        window.speechSynthesis.speak(utterance);
+      } else {
+        setQuickAudioPlayingText(null);
+      }
     } finally {
       setQuickAudioLoading(false);
     }
@@ -195,107 +261,78 @@ export default function App() {
     setCurrentTab("ai_teacher");
   };
 
+  // Home Dashboard quick action handlers
+  const handleContinueLesson = (lessonId: string, level: GermanLevel = "A1") => {
+    setSelectedLevel(level);
+    setSelectedLessonId(lessonId);
+    setSelectedCategoryFilter(null);
+    setCurrentTab("german_learning");
+  };
+
+  const handleOpenFlashcards = () => {
+    setSelectedLevel("A1");
+    setSelectedLessonId(null);
+    setSelectedCategoryFilter("flashcards");
+    setCurrentTab("german_learning");
+  };
+
+  const handleOpenListening = () => {
+    setSelectedLevel("A1");
+    setSelectedLessonId(null);
+    setSelectedCategoryFilter("listening");
+    setCurrentTab("german_learning");
+  };
+
+  const handleOpenSpeaking = () => {
+    setSelectedLevel("A1");
+    setSelectedLessonId(null);
+    setSelectedCategoryFilter("speaking");
+    setCurrentTab("german_learning");
+  };
+
+  const handleOpenVocab = () => {
+    setSelectedLevel("A1");
+    setSelectedLessonId(null);
+    setSelectedCategoryFilter("vocabulary");
+    setCurrentTab("german_learning");
+  };
+
   return (
-    <div className="min-h-screen bg-stone-100/70 text-stone-900 font-sans antialiased selection:bg-emerald-200">
-      {/* Top Header Navigation */}
-      <header className="border-b border-stone-200/90 bg-white/95 backdrop-blur-md sticky top-0 z-30 shadow-xs">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-2">
-          {/* Logo & Brand */}
+    <div className="min-h-screen bg-stone-50 text-stone-900 flex flex-col font-sans selection:bg-emerald-100 selection:text-emerald-900 pb-20 sm:pb-12">
+      {/* Top Mobile/Desktop Compact Header */}
+      <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-stone-200 shadow-2xs">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
           <div
-            onClick={() => setCurrentTab("dashboard")}
-            className="flex items-center gap-3 cursor-pointer select-none group"
+            onClick={() => {
+              setCurrentTab("dashboard");
+              setSelectedLessonId(null);
+            }}
+            className="flex items-center gap-2 cursor-pointer select-none"
           >
-            <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs group-hover:bg-emerald-500 transition-colors">
-              <Volume2 className="w-5 h-5" />
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-800 to-teal-950 flex items-center justify-center text-white font-black text-sm shadow-xs">
+              🇩🇪
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-stone-900 text-base leading-tight tracking-tight">
-                  Text to Speech Studio
-                </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 font-semibold hidden md:inline">
-                  v2.0
-                </span>
-              </div>
-              <p className="text-xs text-stone-500 font-medium hidden sm:block">
-                AI Voice Studio & German Learning Suite
-              </p>
+              <span className="text-sm font-black tracking-tight text-stone-900">
+                Deutsch<span className="text-emerald-700">Studio</span>
+              </span>
             </div>
           </div>
 
-          {/* Main Navigation Tabs */}
-          <nav className="flex items-center gap-1 sm:gap-1.5 p-1 rounded-xl bg-stone-100/90 border border-stone-200 text-xs font-semibold">
-            <button
-              onClick={() => setCurrentTab("dashboard")}
-              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-                currentTab === "dashboard"
-                  ? "bg-white text-stone-900 shadow-xs font-bold"
-                  : "text-stone-600 hover:text-stone-900"
-              }`}
-            >
-              <Home className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Dashboard</span>
-            </button>
-
-            <button
-              onClick={() => setCurrentTab("voice_studio")}
-              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-                currentTab === "voice_studio"
-                  ? "bg-white text-stone-900 shadow-xs font-bold"
-                  : "text-stone-600 hover:text-stone-900"
-              }`}
-            >
-              <Mic className="w-3.5 h-3.5 text-purple-600" />
-              <span>Voice Studio</span>
-            </button>
-
-            <button
-              onClick={() => setCurrentTab("german_learning")}
-              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-                currentTab === "german_learning"
-                  ? "bg-white text-stone-900 shadow-xs font-bold"
-                  : "text-stone-600 hover:text-stone-900"
-              }`}
-            >
-              <GraduationCap className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Learn German</span>
-            </button>
-
-            <button
-              onClick={() => setCurrentTab("ai_teacher")}
-              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-                currentTab === "ai_teacher"
-                  ? "bg-white text-stone-900 shadow-xs font-bold"
-                  : "text-stone-600 hover:text-stone-900"
-              }`}
-            >
-              <Bot className="w-3.5 h-3.5 text-sky-600" />
-              <span className="hidden sm:inline">AI Teacher</span>
-            </button>
-
-            <button
-              onClick={() => setCurrentTab("settings")}
-              className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg transition-all flex items-center gap-1 cursor-pointer ${
-                currentTab === "settings"
-                  ? "bg-white text-stone-900 shadow-xs font-bold"
-                  : "text-stone-600 hover:text-stone-900"
-              }`}
-              title="Settings"
-            >
-              <SettingsIcon className="w-3.5 h-3.5" />
-            </button>
-          </nav>
-
-          {/* Quick Streak & Audio Status Badge */}
-          <div className="hidden lg:flex items-center gap-2">
+          {/* Quick Header Badges */}
+          <div className="flex items-center gap-2">
             <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold">
               <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-              <span>{progress.streakDays}d Streak</span>
+              <span>{progress.streakDays}d</span>
+            </div>
+            <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-bold">
+              <Star className="w-3.5 h-3.5 text-emerald-600 fill-emerald-600" />
+              <span>{progress.xp} XP</span>
             </div>
             {quickAudioLoading && (
-              <div className="flex items-center gap-1 text-[11px] text-emerald-700 font-medium animate-pulse">
+              <div className="flex items-center gap-1 text-[11px] text-emerald-700 font-medium animate-pulse ml-1">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>Audio...</span>
+                <span className="hidden sm:inline">Audio...</span>
               </div>
             )}
           </div>
@@ -303,7 +340,7 @@ export default function App() {
       </header>
 
       {/* Main Container */}
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+      <main className="flex-1 max-w-4xl mx-auto w-full px-4 sm:px-6 py-4 sm:py-6">
         {currentTab === "dashboard" && (
           <DashboardView
             progress={progress}
@@ -311,16 +348,11 @@ export default function App() {
             onSelectGermanTab={(subTab) => setActiveGermanSubTab(subTab)}
             onQuickTTS={handleQuickTTS}
             recentAudio={history}
-          />
-        )}
-
-        {currentTab === "voice_studio" && (
-          <VoiceStudioView
-            onGenerateAudio={handleGenerateAudio}
-            history={history}
-            onDeleteHistoryItem={handleDeleteHistoryItem}
-            onRenameHistoryItem={handleRenameHistoryItem}
-            onClearHistory={handleClearHistory}
+            onContinueLesson={handleContinueLesson}
+            onOpenFlashcards={handleOpenFlashcards}
+            onOpenListening={handleOpenListening}
+            onOpenSpeaking={handleOpenSpeaking}
+            onOpenVocab={handleOpenVocab}
           />
         )}
 
@@ -331,6 +363,19 @@ export default function App() {
             onQuickTTS={handleQuickTTS}
             onLaunchScenarioInChat={handleLaunchScenarioInChat}
             activeSubTab={activeGermanSubTab}
+            initialLevel={selectedLevel}
+            initialLessonId={selectedLessonId}
+            initialCategoryFilter={selectedCategoryFilter}
+          />
+        )}
+
+        {currentTab === "voice_studio" && (
+          <VoiceStudioView
+            onGenerateAudio={handleGenerateAudio}
+            history={history}
+            onDeleteHistoryItem={handleDeleteHistoryItem}
+            onRenameHistoryItem={handleRenameHistoryItem}
+            onClearHistory={handleClearHistory}
           />
         )}
 
@@ -350,6 +395,73 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* 3. Mobile Bottom Navigation Bar (Fixed) */}
+      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-slate-200 px-3 py-1.5 flex items-center justify-around shadow-lg">
+        <button
+          id="nav-tab-home"
+          onClick={() => {
+            setCurrentTab("dashboard");
+            setSelectedLessonId(null);
+          }}
+          className={`flex-1 py-1 px-1 flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+            currentTab === "dashboard"
+              ? "text-emerald-800 font-bold"
+              : "text-slate-500 hover:text-slate-900 font-medium"
+          }`}
+        >
+          <Home className="w-5 h-5" />
+          <span className="text-[11px] leading-tight">Home</span>
+        </button>
+
+        <button
+          id="nav-tab-learn"
+          onClick={() => {
+            setSelectedLevel("A1");
+            setCurrentTab("german_learning");
+          }}
+          className={`flex-1 py-1 px-1 flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+            currentTab === "german_learning"
+              ? "text-emerald-800 font-bold"
+              : "text-slate-500 hover:text-slate-900 font-medium"
+          }`}
+        >
+          <GraduationCap className="w-5 h-5" />
+          <span className="text-[11px] leading-tight">Learn</span>
+        </button>
+
+        <button
+          id="nav-tab-studio"
+          onClick={() => {
+            setCurrentTab("voice_studio");
+            setSelectedLessonId(null);
+          }}
+          className={`flex-1 py-1 px-1 flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+            currentTab === "voice_studio"
+              ? "text-emerald-800 font-bold"
+              : "text-slate-500 hover:text-slate-900 font-medium"
+          }`}
+        >
+          <Mic className="w-5 h-5" />
+          <span className="text-[11px] leading-tight">Studio</span>
+        </button>
+
+        <button
+          id="nav-tab-me"
+          onClick={() => {
+            setCurrentTab("settings");
+            setSelectedLessonId(null);
+          }}
+          className={`flex-1 py-1 px-1 flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+            currentTab === "settings"
+              ? "text-emerald-800 font-bold"
+              : "text-slate-500 hover:text-slate-900 font-medium"
+          }`}
+        >
+          <User className="w-5 h-5" />
+          <span className="text-[11px] leading-tight">Me</span>
+        </button>
+      </nav>
     </div>
   );
 }
