@@ -32,6 +32,7 @@ import { GERMAN_GRAMMAR_TOPICS } from "../data/germanGrammar";
 import { GERMAN_PRONUNCIATION_SOUNDS, CHALLENGING_GERMAN_WORDS } from "../data/germanPronunciation";
 import { GERMAN_SCENARIOS } from "../data/germanScenarios";
 import { GERMAN_LISTENING_EXERCISES, ListeningExercise } from "../data/germanListening";
+import { GermanLevelPage } from "./GermanLevelPage";
 
 interface GermanLearningViewProps {
   progress: UserProgress;
@@ -51,6 +52,9 @@ export const GermanLearningView: React.FC<GermanLearningViewProps> = ({
   const [currentTab, setCurrentTab] = useState<GermanTab>(
     (activeSubTab as GermanTab) || "roadmap"
   );
+
+  // Active CEFR Level Page (A1, A2, B1, B2, C1)
+  const [activeLevelPage, setActiveLevelPage] = useState<GermanLevel | null>(null);
 
   // Vocabulary filters
   const [selectedLevel, setSelectedLevel] = useState<GermanLevel | "ALL">("ALL");
@@ -172,6 +176,20 @@ export const GermanLearningView: React.FC<GermanLearningViewProps> = ({
     }
   };
 
+  // If a dedicated CEFR Level Page is selected, render it
+  if (activeLevelPage) {
+    return (
+      <GermanLevelPage
+        level={activeLevelPage}
+        onBackToRoadmap={() => setActiveLevelPage(null)}
+        progress={progress}
+        onUpdateProgress={onUpdateProgress}
+        onQuickTTS={onQuickTTS}
+        onLaunchScenarioInChat={onLaunchScenarioInChat}
+      />
+    );
+  }
+
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       {/* Sub-Navigation */}
@@ -220,12 +238,16 @@ export const GermanLearningView: React.FC<GermanLearningViewProps> = ({
       {currentTab === "roadmap" && (
         <div className="space-y-6">
           <div className="bg-white rounded-2xl border border-stone-200 p-6 shadow-sm space-y-4">
-            <h3 className="text-xl font-bold text-stone-900">
-              German CEFR Roadmap: A1 to C1
-            </h3>
-            <p className="text-sm text-stone-600 leading-relaxed">
-              Follow a structured journey from absolute beginner to native fluency. Each stage builds your vocabulary, grammar foundations, listening comprehension, and conversational confidence.
-            </p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-xl font-bold text-stone-900">
+                  German CEFR Roadmap: A1 to C1
+                </h3>
+                <p className="text-sm text-stone-600 leading-relaxed mt-1">
+                  Follow a structured journey from absolute beginner to native fluency. Click on any level card (A1, A2, B1, B2, C1) to open its comprehensive learning page with structured modules, vocabulary, grammar, listening, speaking, reading, writing, and Goethe/telc level tests.
+                </p>
+              </div>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-5 gap-3 pt-2">
               {[
@@ -233,7 +255,7 @@ export const GermanLearningView: React.FC<GermanLearningViewProps> = ({
                   level: "A1",
                   title: "Beginner",
                   desc: "Basic greetings, numbers, ordering food, simple sentences, der/die/das & Akkusativ.",
-                  words: "500-800 words",
+                  words: "600-800 words",
                   status: "In Progress",
                   active: progress.currentLevel === "A1",
                 },
@@ -249,7 +271,7 @@ export const GermanLearningView: React.FC<GermanLearningViewProps> = ({
                   level: "B1",
                   title: "Intermediate",
                   desc: "Express opinions, job interviews, subordinate clauses (weil, dass), relative clauses.",
-                  words: "2,400 words",
+                  words: "2,500 words",
                   status: "Upcoming",
                   active: progress.currentLevel === "B1",
                 },
@@ -272,18 +294,19 @@ export const GermanLearningView: React.FC<GermanLearningViewProps> = ({
               ].map((m) => (
                 <div
                   key={m.level}
-                  className={`p-4 rounded-2xl border transition-all ${
+                  onClick={() => setActiveLevelPage(m.level as GermanLevel)}
+                  className={`p-4 rounded-2xl border transition-all cursor-pointer group hover:shadow-md hover:-translate-y-0.5 ${
                     m.active
-                      ? "bg-emerald-50/70 border-emerald-500 shadow-sm"
-                      : "bg-white border-stone-200"
+                      ? "bg-amber-50/70 border-amber-500 shadow-sm"
+                      : "bg-white border-stone-200 hover:border-amber-400"
                   }`}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <span
-                      className={`text-lg font-black px-2 py-0.5 rounded-lg ${
+                      className={`text-lg font-black px-2 py-0.5 rounded-lg transition-colors ${
                         m.active
-                          ? "bg-emerald-600 text-white"
-                          : "bg-stone-100 text-stone-700"
+                          ? "bg-amber-600 text-white"
+                          : "bg-stone-100 text-stone-700 group-hover:bg-amber-100 group-hover:text-amber-900"
                       }`}
                     >
                       {m.level}
@@ -292,10 +315,16 @@ export const GermanLearningView: React.FC<GermanLearningViewProps> = ({
                       {m.status}
                     </span>
                   </div>
-                  <h4 className="font-bold text-stone-900 text-sm">{m.title}</h4>
+                  <h4 className="font-bold text-stone-900 text-sm group-hover:text-amber-950 flex items-center justify-between">
+                    <span>{m.title}</span>
+                    <ArrowRight className="w-4 h-4 text-stone-400 group-hover:text-amber-600 group-hover:translate-x-1 transition-all" />
+                  </h4>
                   <p className="text-xs text-stone-500 mt-1 leading-relaxed">{m.desc}</p>
-                  <div className="mt-3 pt-2 border-t border-stone-100 text-[10px] font-mono text-emerald-700 font-bold">
-                    {m.words}
+                  <div className="mt-3 pt-2 border-t border-stone-100 flex items-center justify-between text-[10px]">
+                    <span className="font-mono text-amber-800 font-bold">{m.words}</span>
+                    <span className="font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 group-hover:bg-amber-100">
+                      Lernen →
+                    </span>
                   </div>
                 </div>
               ))}

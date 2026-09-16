@@ -340,6 +340,118 @@ Respond ONLY with valid JSON with this schema:
   }
 });
 
+// AI German Writing Evaluation endpoint
+app.post("/api/german/evaluate-writing", async (req, res) => {
+  try {
+    const { userText, prompt, taskInstructions, level = "A1" } = req.body;
+
+    if (!userText || typeof userText !== "string") {
+      return res.status(400).json({ error: "User text is required." });
+    }
+
+    const ai = getGenAI();
+
+    const systemInstruction = `You are an expert, encouraging Goethe/telc German certified language teacher.
+Evaluate a learner's German writing submission for level ${level}.
+Task Prompt: "${prompt || "German writing exercise"}"
+Task Instructions: "${taskInstructions || ""}"
+Learner's German Text: "${userText}"
+
+Analyze the text for:
+1. Grammar correctness (verb position V2, verb conjugations, case endings, prepositions).
+2. Vocabulary range and spelling (capitalization of nouns!).
+3. Task completion according to the level ${level}.
+
+Return valid JSON with this exact schema:
+{
+  "score": 85,
+  "passed": true,
+  "overallFeedback": "Very encouraging overview of what the learner did well and how to improve.",
+  "correctedText": "The fully corrected German text written with natural grammar and correct punctuation/capitalization.",
+  "grammarPoints": [
+    {
+      "original": "Mistake fragment",
+      "correction": "Correct German fragment",
+      "rule": "Simple, clear pedagogical explanation of why this was corrected."
+    }
+  ],
+  "vocabularyNotes": [
+    "Useful alternative word or phrase to enrich their expression."
+  ],
+  "encouragement": "Positive motivating message in German and English."
+}`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ parts: [{ text: `Evaluate this German text: ${userText}` }] }],
+      config: {
+        systemInstruction,
+        responseMimeType: "application/json",
+        temperature: 0.3,
+      },
+    });
+
+    const responseText = response.text || "{}";
+    const parsed = JSON.parse(responseText);
+    return res.json(parsed);
+  } catch (error: any) {
+    console.error("German writing evaluation error:", error);
+    return res.status(500).json({
+      error: error?.message || "Failed to evaluate German writing.",
+    });
+  }
+});
+
+// AI German Speaking Response Evaluation endpoint
+app.post("/api/german/evaluate-speaking", async (req, res) => {
+  try {
+    const { userSpeechText, situation, aiOpening, level = "A1" } = req.body;
+
+    if (!userSpeechText || typeof userSpeechText !== "string") {
+      return res.status(400).json({ error: "Speech response is required." });
+    }
+
+    const ai = getGenAI();
+
+    const systemInstruction = `You are a patient German speaking examiner and conversational coach for level ${level}.
+Situation: "${situation}"
+AI Partner said: "${aiOpening}"
+Learner responded: "${userSpeechText}"
+
+Evaluate whether the learner's response makes sense in the conversation, is grammatically appropriate for ${level}, and sounds natural.
+
+Return valid JSON with this exact schema:
+{
+  "isAppropriate": true,
+  "score": 90,
+  "feedback": "Short feedback on how understandable and natural the response is.",
+  "modelAnswer": "An ideal native-sounding German reply for this situation.",
+  "modelAnswerEnglish": "English translation of the ideal reply.",
+  "grammarCorrection": "Any grammar or word choice correction, or 'Perfekt!' if flawless.",
+  "nextFollowUp": "A natural follow-up question in German to keep the conversation going."
+}`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ parts: [{ text: `Evaluate this spoken response: ${userSpeechText}` }] }],
+      config: {
+        systemInstruction,
+        responseMimeType: "application/json",
+        temperature: 0.4,
+      },
+    });
+
+    const responseText = response.text || "{}";
+    const parsed = JSON.parse(responseText);
+    return res.json(parsed);
+  } catch (error: any) {
+    console.error("German speaking evaluation error:", error);
+    return res.status(500).json({
+      error: error?.message || "Failed to evaluate German speaking response.",
+    });
+  }
+});
+
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

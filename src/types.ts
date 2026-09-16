@@ -165,6 +165,135 @@ export interface GermanChatMessage {
   timestamp: number;
 }
 
+export interface TopicGrammarData {
+  topic: string;
+  germanTitle?: string;
+  explanation: string;
+  keyRules: string[];
+  examples: Array<{ german: string; english: string; highlight?: string }>;
+  tips: string;
+  tableData?: {
+    headers: string[];
+    rows: string[][];
+  };
+}
+
+export interface TopicListeningData {
+  audioText: string;
+  englishTranslation: string;
+  question: string;
+  options: string[];
+  correctOptionIndex: number;
+  explanation: string;
+  dictationSentence: string;
+  dictationMissingWord: string;
+}
+
+export interface TopicSpeakingData {
+  situation: string;
+  aiOpening: string;
+  aiOpeningTranslation: string;
+  suggestedStarters: string[];
+  exampleResponse: string;
+}
+
+export interface TopicReadingData {
+  title: string;
+  germanText: string;
+  englishTranslation: string;
+  keyPhrases: Array<{ german: string; english: string }>;
+  comprehensionQuestions: Array<{
+    question: string;
+    options: string[];
+    correctIndex: number;
+    explanation: string;
+  }>;
+}
+
+export interface TopicWritingData {
+  taskPrompt: string;
+  instructions: string;
+  exampleSubmission: string;
+  starterPhrases?: string[];
+  minWords?: number;
+}
+
+export interface TopicPronunciationData {
+  targetSound: string;
+  symbol: string;
+  ruleExplanation: string;
+  mouthGuide: string;
+  words: Array<{ word: string; translation: string; phonetic: string; tip: string }>;
+}
+
+export interface TopicQuizQuestion {
+  question: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string;
+}
+
+export interface TopicLesson {
+  id: string;
+  orderNumber: number;
+  level: GermanLevel;
+  title: string;
+  germanTitle: string;
+  description: string;
+  icon: string;
+  grammarFocus: string;
+  vocabulary: VocabItem[];
+  grammar: TopicGrammarData;
+  listening: TopicListeningData;
+  speaking: TopicSpeakingData;
+  reading: TopicReadingData;
+  writing: TopicWritingData;
+  pronunciation: TopicPronunciationData;
+  quiz: TopicQuizQuestion[];
+}
+
+export interface LevelTestQuestion {
+  id: string;
+  question: string;
+  options?: string[];
+  correctAnswer: string | number;
+  explanation: string;
+  audioPrompt?: string;
+}
+
+export interface LevelTestItem {
+  id: string;
+  type: "vocabulary" | "grammar" | "listening" | "reading" | "writing" | "speaking" | "final";
+  title: string;
+  description: string;
+  durationMinutes: number;
+  passingScore: number;
+  questions: LevelTestQuestion[];
+}
+
+export interface LevelSkillProgress {
+  completedModuleIds: string[];
+  vocabularyPercent: number;
+  grammarPercent: number;
+  listeningPercent: number;
+  speakingPercent: number;
+  readingPercent: number;
+  writingPercent: number;
+  pronunciationPercent: number;
+  testScores: Record<string, number>;
+}
+
+export interface LevelCurriculum {
+  level: GermanLevel;
+  name: string;
+  cefrTitle: string;
+  summary: string;
+  wordCountTarget: string;
+  prerequisites: string;
+  modules: TopicLesson[];
+  tests: LevelTestItem[];
+}
+
 export interface UserProgress {
   currentLevel: GermanLevel;
   streakDays: number;
@@ -176,6 +305,7 @@ export interface UserProgress {
   masteredVocabIds: string[];
   weakAreas: string[];
   xp: number;
+  levelProgress?: Record<GermanLevel, LevelSkillProgress>;
 }
 
 export type MainTab =
