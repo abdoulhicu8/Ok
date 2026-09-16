@@ -16,6 +16,7 @@ import {
   Volume2,
   Check,
   Bookmark,
+  Search,
 } from "lucide-react";
 import { GermanLevel, LevelCurriculum, LevelTestItem, TopicLesson, UserProgress, VocabItem } from "../types";
 import { GERMAN_CURRICULA } from "../data/germanLevels";
@@ -43,6 +44,8 @@ export const GermanLevelPage: React.FC<GermanLevelPageProps> = ({
   const curriculum: LevelCurriculum = GERMAN_CURRICULA[level];
   const [selectedLesson, setSelectedLesson] = useState<TopicLesson | null>(null);
   const [activeTab, setActiveTab] = useState<LevelViewTab>("modules");
+  const [selectedSection, setSelectedSection] = useState<number | "all">("all");
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Flashcards state
   const [flashcardIndex, setFlashcardIndex] = useState(0);
@@ -60,6 +63,34 @@ export const GermanLevelPage: React.FC<GermanLevelPageProps> = ({
 
   // Flatten all vocabulary for this level
   const allLevelVocab: VocabItem[] = curriculum.modules.flatMap((m) => m.vocabulary);
+
+  // Extract distinct sections if available
+  const sections = Array.from(
+    new Set(
+      curriculum.modules
+        .map((m) => m.sectionNumber)
+        .filter((s): s is number => typeof s === "number")
+    )
+  ).sort((a, b) => a - b);
+
+  // Filter modules by section and search query
+  const filteredModules = curriculum.modules.filter((m) => {
+    if (selectedSection !== "all" && m.sectionNumber !== selectedSection) {
+      return false;
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const matchTitle = m.title.toLowerCase().includes(q);
+      const matchGerman = m.germanTitle.toLowerCase().includes(q);
+      const matchDesc = m.description.toLowerCase().includes(q);
+      const matchGrammar = m.grammarFocus.toLowerCase().includes(q);
+      const matchVocab = m.vocabulary.some(
+        (v) => v.german.toLowerCase().includes(q) || v.english.toLowerCase().includes(q)
+      );
+      return matchTitle || matchGerman || matchDesc || matchGrammar || matchVocab;
+    }
+    return true;
+  });
 
   // If a topic lesson is open, show the dedicated TopicLessonView
   if (selectedLesson) {
@@ -232,67 +263,162 @@ export const GermanLevelPage: React.FC<GermanLevelPageProps> = ({
       {/* TAB 1: MODULES GRID */}
       {activeTab === "modules" && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-bold text-slate-900">
-              Strukturierte {level}-Lerneinheiten
-            </h2>
-            <span className="text-xs text-slate-500">
-              Klicken Sie auf ein Thema, um die Lektion zu öffnen
-            </span>
+          {/* Header with Search and Section Filters */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200">
+            <div>
+              <h2 className="text-base font-bold text-slate-900">
+                Strukturierte {level}-Lerneinheiten ({filteredModules.length} von {totalModules})
+              </h2>
+              <p className="text-xs text-slate-500">
+                Wählen Sie eine Lektion aus, um Wortschatz, Grammatik, Dialoge, Aussprache und Übungen zu starten.
+              </p>
+            </div>
+
+            {/* Quick search input */}
+            <div className="relative min-w-[240px]">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Lektion oder Begriff suchen..."
+                className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 bg-slate-50/50"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-700"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {curriculum.modules.map((m) => {
-              const isDone = completedIds.includes(m.id);
-              return (
-                <div
-                  key={m.id}
-                  onClick={() => setSelectedLesson(m)}
-                  className={`p-5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between hover:shadow-md hover:-translate-y-0.5 ${
-                    isDone
-                      ? "bg-emerald-50/40 border-emerald-200"
-                      : "bg-white border-slate-200 hover:border-amber-300"
-                  }`}
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <span className="w-6 h-6 rounded-full bg-slate-100 text-slate-700 text-xs font-bold flex items-center justify-center">
-                        {m.orderNumber}
-                      </span>
-                      {isDone ? (
-                        <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
-                          <CheckCircle className="w-3.5 h-3.5" /> Erledigt
-                        </span>
-                      ) : (
-                        <span className="text-[11px] font-semibold text-slate-400">
-                          Bereit zum Lernen
-                        </span>
-                      )}
+          {/* Section Filter Pills (if curriculum has sections) */}
+          {sections.length > 0 && (
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 pt-0.5 scrollbar-thin">
+              <button
+                onClick={() => setSelectedSection("all")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                  selectedSection === "all"
+                    ? "bg-slate-900 text-white shadow-xs"
+                    : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+                }`}
+              >
+                Alle ({totalModules})
+              </button>
+              {sections.map((secNum) => {
+                const secLessons = curriculum.modules.filter((m) => m.sectionNumber === secNum);
+                const secCompleted = secLessons.filter((m) => completedIds.includes(m.id)).length;
+                const sampleLesson = secLessons[0];
+                const label = sampleLesson?.sectionTitle || `Sektion ${secNum}`;
+
+                return (
+                  <button
+                    key={secNum}
+                    onClick={() => setSelectedSection(secNum)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+                      selectedSection === secNum
+                        ? "bg-amber-600 text-white shadow-xs"
+                        : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"
+                    }`}
+                  >
+                    <span>
+                      Sektion {secNum}: {label}
+                    </span>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                        selectedSection === secNum
+                          ? "bg-amber-700 text-white"
+                          : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {secCompleted}/{secLessons.length}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {filteredModules.length === 0 ? (
+            <div className="text-center py-12 bg-white rounded-xl border border-slate-200">
+              <p className="text-sm font-semibold text-slate-700">Keine Lektionen gefunden</p>
+              <p className="text-xs text-slate-500 mt-1">
+                Versuchen Sie einen anderen Suchbegriff oder wählen Sie „Alle“.
+              </p>
+              <button
+                onClick={() => {
+                  setSearchQuery("");
+                  setSelectedSection("all");
+                }}
+                className="mt-3 px-3 py-1.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-800"
+              >
+                Filter zurücksetzen
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredModules.map((m) => {
+                const isDone = completedIds.includes(m.id);
+                return (
+                  <div
+                    key={m.id}
+                    onClick={() => setSelectedLesson(m)}
+                    className={`p-5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between hover:shadow-md hover:-translate-y-0.5 ${
+                      isDone
+                        ? "bg-emerald-50/40 border-emerald-200"
+                        : "bg-white border-slate-200 hover:border-amber-300"
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-6 h-6 rounded-full bg-slate-100 text-slate-700 text-xs font-bold flex items-center justify-center">
+                            {m.orderNumber}
+                          </span>
+                          {m.sectionNumber && (
+                            <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                              Sektion {m.sectionNumber}
+                            </span>
+                          )}
+                        </div>
+                        {isDone ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                            <CheckCircle className="w-3.5 h-3.5" /> Erledigt
+                          </span>
+                        ) : (
+                          <span className="text-[11px] font-semibold text-slate-400">
+                            Bereit zum Lernen
+                          </span>
+                        )}
+                      </div>
+
+                      <h3 className="text-base font-bold text-slate-900">
+                        {m.title}
+                      </h3>
+                      <p className="text-xs font-medium text-slate-500 mb-2">
+                        {m.germanTitle}
+                      </p>
+                      <p className="text-xs text-slate-600 line-clamp-2">
+                        {m.description}
+                      </p>
                     </div>
 
-                    <h3 className="text-base font-bold text-slate-900">
-                      {m.title}
-                    </h3>
-                    <p className="text-xs font-medium text-slate-500 mb-2">
-                      {m.germanTitle}
-                    </p>
-                    <p className="text-xs text-slate-600 line-clamp-2">
-                      {m.description}
-                    </p>
+                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                      <span className="text-[11px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200/60 max-w-[170px] truncate">
+                        {m.grammarFocus}
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-xs font-bold text-slate-700 hover:text-slate-950">
+                        Öffnen <ChevronRight className="w-3.5 h-3.5" />
+                      </span>
+                    </div>
                   </div>
-
-                  <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                    <span className="text-[11px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200/60 max-w-[170px] truncate">
-                      {m.grammarFocus}
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-xs font-bold text-slate-700 hover:text-slate-950">
-                      Öffnen <ChevronRight className="w-3.5 h-3.5" />
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 

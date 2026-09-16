@@ -1,10 +1,9 @@
 import { GermanLevel, LevelCurriculum } from "../types";
-import { A1_LESSONS_PART_1 } from "./curriculum/a1LessonsPart1";
-import { A1_LESSONS_PART_2 } from "./curriculum/a1LessonsPart2";
+import { A1_65_LESSONS } from "./curriculum/a1";
 import { A2_LESSONS, B1_LESSONS, B2_LESSONS, C1_LESSONS } from "./curriculum/higherLevelLessons";
 import { LEVEL_TESTS } from "./curriculum/levelTests";
 
-export const A1_ALL_MODULES = [...A1_LESSONS_PART_1, ...A1_LESSONS_PART_2];
+export const A1_ALL_MODULES = A1_65_LESSONS;
 
 export const GERMAN_CURRICULA: Record<GermanLevel, LevelCurriculum> = {
   A1: {

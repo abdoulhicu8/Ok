@@ -233,6 +233,22 @@ export interface TopicQuizQuestion {
   explanation: string;
 }
 
+export interface TopicPracticeExercise {
+  id: string;
+  type: "choice" | "fill" | "article" | "translate";
+  prompt: string;
+  options?: string[];
+  correctAnswer: string;
+  explanation: string;
+}
+
+export interface TopicLearnContent {
+  overview: string;
+  keyPoints: string[];
+  dialogueOrStory?: Array<{ speaker: string; german: string; english: string }>;
+  culturalTip?: string;
+}
+
 export interface TopicLesson {
   id: string;
   orderNumber: number;
@@ -242,6 +258,12 @@ export interface TopicLesson {
   description: string;
   icon: string;
   grammarFocus: string;
+  sectionNumber?: number;
+  sectionTitle?: string;
+  estimatedMinutes?: number;
+  learningObjectives?: string[];
+  learnContent?: TopicLearnContent;
+  practiceExercises?: TopicPracticeExercise[];
   vocabulary: VocabItem[];
   grammar: TopicGrammarData;
   listening: TopicListeningData;

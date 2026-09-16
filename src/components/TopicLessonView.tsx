@@ -28,13 +28,15 @@ interface TopicLessonViewProps {
 }
 
 type TopicTab =
+  | "learn"
   | "vocabulary"
   | "grammar"
+  | "pronunciation"
+  | "practice"
   | "listening"
   | "speaking"
   | "reading"
   | "writing"
-  | "pronunciation"
   | "quiz";
 
 export const TopicLessonView: React.FC<TopicLessonViewProps> = ({
@@ -44,7 +46,13 @@ export const TopicLessonView: React.FC<TopicLessonViewProps> = ({
   onUpdateProgress,
   onQuickTTS,
 }) => {
-  const [activeTab, setActiveTab] = useState<TopicTab>("vocabulary");
+  const [activeTab, setActiveTab] = useState<TopicTab>(
+    lesson.learnContent ? "learn" : "vocabulary"
+  );
+
+  // Practice state
+  const [practiceAnswers, setPracticeAnswers] = useState<Record<string, string>>({});
+  const [practiceChecked, setPracticeChecked] = useState(false);
 
   // Listening state
   const [isPlayingSlow, setIsPlayingSlow] = useState(false);
@@ -258,17 +266,23 @@ export const TopicLessonView: React.FC<TopicLessonViewProps> = ({
         </div>
       </div>
 
-      {/* 8-Tab Navigation Bar */}
+      {/* Tab Navigation Bar */}
       <div className="flex flex-wrap gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200">
         {[
+          ...(lesson.learnContent
+            ? [{ id: "learn", label: "Lernen & Dialog", icon: Sparkles }]
+            : []),
           { id: "vocabulary", label: "Wortschatz", icon: BookOpen, count: lesson.vocabulary.length },
           { id: "grammar", label: "Grammatik", icon: FileText },
+          { id: "pronunciation", label: "Aussprache", icon: Volume2 },
+          ...(lesson.practiceExercises && lesson.practiceExercises.length > 0
+            ? [{ id: "practice", label: "Übungen", icon: HelpCircle, count: lesson.practiceExercises.length }]
+            : []),
           { id: "listening", label: "Hören", icon: Headphones },
           { id: "speaking", label: "Sprechen", icon: Mic },
           { id: "reading", label: "Lesen", icon: BookOpen },
           { id: "writing", label: "Schreiben", icon: PenTool },
-          { id: "pronunciation", label: "Aussprache", icon: Volume2 },
-          { id: "quiz", label: "Quiz", icon: HelpCircle, count: lesson.quiz.length },
+          { id: "quiz", label: "Quiz", icon: CheckCircle, count: lesson.quiz.length },
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -300,6 +314,238 @@ export const TopicLessonView: React.FC<TopicLessonViewProps> = ({
 
       {/* Tab Content */}
       <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
+        {/* TAB: LEARN / ÜBERBLICK */}
+        {activeTab === "learn" && lesson.learnContent && (
+          <div className="space-y-6">
+            {/* Overview Card */}
+            <div className="p-5 rounded-xl bg-amber-50/50 border border-amber-200">
+              <div className="flex items-center gap-2 text-amber-900 font-bold text-sm mb-2">
+                <Sparkles className="w-4 h-4 text-amber-600" />
+                Lektionsüberblick & Ziel
+              </div>
+              <p className="text-sm text-slate-800 leading-relaxed">
+                {lesson.learnContent.overview}
+              </p>
+
+              {lesson.learningObjectives && lesson.learningObjectives.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-amber-200/80">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-amber-900 mb-2">
+                    Lernziele dieser Lektion:
+                  </h4>
+                  <ul className="space-y-1.5 text-xs text-slate-700">
+                    {lesson.learningObjectives.map((obj, i) => (
+                      <li key={i} className="flex items-start gap-2">
+                        <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                        <span>{obj}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            {/* Key Points */}
+            <div className="space-y-3">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Lightbulb className="w-4 h-4 text-amber-600" />
+                Kernwissen & Erklärungen
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {lesson.learnContent.keyPoints.map((pt, i) => (
+                  <div
+                    key={i}
+                    className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 text-xs text-slate-800 leading-relaxed font-medium flex items-start gap-2.5"
+                  >
+                    <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+                      {i + 1}
+                    </span>
+                    <span>{pt}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Dialogue or Story with TTS */}
+            {lesson.learnContent.dialogueOrStory && lesson.learnContent.dialogueOrStory.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <Headphones className="w-4 h-4 text-sky-600" />
+                    Alltagsdialog / Praxisbeispiel
+                  </h3>
+                  <button
+                    onClick={() => {
+                      const fullDialog = lesson.learnContent?.dialogueOrStory
+                        ?.map((line) => `${line.speaker}: ${line.german}`)
+                        .join(". ");
+                      if (fullDialog) {
+                        onQuickTTS(fullDialog, "Natural conversational German dialogue", "German");
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-sky-50 text-sky-800 hover:bg-sky-100 rounded-lg transition-colors border border-sky-200 cursor-pointer"
+                  >
+                    <Volume2 className="w-3.5 h-3.5" />
+                    Dialog anhören
+                  </button>
+                </div>
+
+                <div className="space-y-2.5 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                  {lesson.learnContent.dialogueOrStory.map((line, i) => (
+                    <div
+                      key={i}
+                      className="p-3 bg-white rounded-lg border border-slate-200 flex flex-col sm:flex-row sm:items-start justify-between gap-2"
+                    >
+                      <div>
+                        <span className="text-xs font-bold text-sky-800 bg-sky-50 px-2 py-0.5 rounded mr-2">
+                          {line.speaker}
+                        </span>
+                        <span className="text-sm font-semibold text-slate-900">
+                          {line.german}
+                        </span>
+                        <p className="text-xs text-slate-500 mt-1 pl-1 italic">
+                          {line.english}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() =>
+                          onQuickTTS(line.german, "Clear native German speech", "German")
+                        }
+                        className="self-end sm:self-center p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
+                        title="Diesen Satz anhören"
+                      >
+                        <Volume2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Cultural Tip */}
+            {lesson.learnContent.culturalTip && (
+              <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-200 flex items-start gap-3">
+                <span className="text-xl">🇩🇪</span>
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-blue-900">
+                    Kulturtipp & Landeskunde
+                  </h4>
+                  <p className="text-xs text-blue-950 mt-1 leading-relaxed font-medium">
+                    {lesson.learnContent.culturalTip}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB: PRACTICE EXERCISES */}
+        {activeTab === "practice" && lesson.practiceExercises && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">
+                  Interaktive Übungen ({lesson.practiceExercises.length})
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Wenden Sie das Gelernte sofort an und prüfen Sie Ihre Antworten
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setPracticeAnswers({});
+                  setPracticeChecked(false);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg border border-slate-200 cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Zurücksetzen
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {lesson.practiceExercises.map((ex, exIdx) => {
+                const selected = practiceAnswers[ex.id];
+                const isCorrect = selected === ex.correctAnswer;
+
+                return (
+                  <div
+                    key={ex.id}
+                    className="p-5 rounded-xl border border-slate-200 bg-white space-y-3"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-full bg-slate-100 text-slate-700 text-xs font-bold flex items-center justify-center">
+                        {exIdx + 1}
+                      </span>
+                      <h4 className="text-sm font-bold text-slate-900">
+                        {ex.prompt}
+                      </h4>
+                    </div>
+
+                    {ex.options && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                        {ex.options.map((opt, optIdx) => {
+                          const isChosen = selected === opt;
+                          const isOptCorrect = opt === ex.correctAnswer;
+
+                          return (
+                            <button
+                              key={optIdx}
+                              disabled={practiceChecked}
+                              onClick={() =>
+                                setPracticeAnswers((prev) => ({
+                                  ...prev,
+                                  [ex.id]: opt,
+                                }))
+                              }
+                              className={`p-3 rounded-lg border text-xs sm:text-sm font-medium text-left transition-all cursor-pointer ${
+                                practiceChecked
+                                  ? isOptCorrect
+                                    ? "bg-emerald-50 border-emerald-400 text-emerald-950 font-bold"
+                                    : isChosen
+                                    ? "bg-rose-50 border-rose-300 text-rose-900"
+                                    : "bg-white border-slate-200 opacity-60"
+                                  : isChosen
+                                  ? "bg-slate-900 text-white border-slate-900"
+                                  : "bg-white border-slate-200 hover:bg-slate-50 text-slate-800"
+                              }`}
+                            >
+                              {opt}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {practiceChecked && (
+                      <div
+                        className={`p-3 rounded-lg text-xs font-medium ${
+                          isCorrect
+                            ? "bg-emerald-100 text-emerald-900"
+                            : "bg-amber-100 text-amber-900"
+                        }`}
+                      >
+                        <p className="font-bold mb-0.5">
+                          {isCorrect ? "✓ Richtig!" : "✗ Hinweis:"}
+                        </p>
+                        {ex.explanation}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setPracticeChecked(true)}
+                disabled={practiceChecked || Object.keys(practiceAnswers).length === 0}
+                className="px-6 py-2.5 rounded-lg bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 disabled:opacity-50 shadow-xs cursor-pointer"
+              >
+                Antworten überprüfen
+              </button>
+            </div>
+          </div>
+        )}
         {/* TAB 1: VOCABULARY */}
         {activeTab === "vocabulary" && (
           <div className="space-y-6">
