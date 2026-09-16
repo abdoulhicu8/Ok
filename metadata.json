@@ -1,6 +1,6 @@
 {
   "name": "Text to Speech Studio",
-  "description": "Text to speech tool with customizable speaking instructions, multi-language support, and audio download.",
+  "description": "Comprehensive AI Voice Studio with custom speech controls, scene voice-over generator, and German Learning Studio with interactive AI tutor, grammar, vocabulary, and pronunciation.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

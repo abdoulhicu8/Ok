@@ -198,6 +198,148 @@ app.post("/api/tts", async (req, res) => {
   }
 });
 
+// AI German Teacher / Conversation Partner endpoint
+app.post("/api/german/chat", async (req, res) => {
+  try {
+    const {
+      message,
+      history = [],
+      level = "A1",
+      scenario = "General Conversation",
+      mode = "bilingual", // 'bilingual' | 'german_only'
+    } = req.body;
+
+    if (!message || typeof message !== "string" || !message.trim()) {
+      return res.status(400).json({ error: "Message is required." });
+    }
+
+    const ai = getGenAI();
+
+    const systemInstruction = `You are a supportive, friendly, and expert German language teacher named "Frau Weber" or "Herr Schmidt".
+The user's current German level is ${level} (CEFR).
+Current context or scenario: "${scenario}".
+Mode: ${mode === "german_only" ? "Strict German Immersion (respond in clear, level-appropriate German)" : "Bilingual (respond in German with English translation & notes)"}.
+
+You MUST format your response as valid JSON with the following schema:
+{
+  "replyGerman": "Your response in natural, level-appropriate German",
+  "replyEnglish": "Accurate English translation of your reply",
+  "correction": "If the user made any grammatical, spelling, case, or word order mistakes in their German, clearly explain it kindly here. If their German was correct or in English, set to null.",
+  "vocabularyTip": "A useful vocabulary word or phrase from this exchange with article (der/die/das) and plural, or null",
+  "grammarNote": "A brief, digestible explanation of a relevant grammar rule (e.g. verb position, accusative/dative case), or null",
+  "suggestedReplies": ["2-3 natural German reply suggestions the student can use next"]
+}
+
+Always keep German sentences natural, encouraging, and tailored to level ${level}.`;
+
+    const contents = [
+      ...history.map((h: any) => ({
+        role: h.role === "user" ? "user" : "model",
+        parts: [{ text: h.text }],
+      })),
+      {
+        role: "user",
+        parts: [{ text: message.trim() }],
+      },
+    ];
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents,
+      config: {
+        systemInstruction,
+        responseMimeType: "application/json",
+        temperature: 0.7,
+      },
+    });
+
+    const responseText = response.text || "{}";
+    let parsed;
+    try {
+      parsed = JSON.parse(responseText);
+    } catch {
+      parsed = {
+        replyGerman: responseText,
+        replyEnglish: "",
+        correction: null,
+        vocabularyTip: null,
+        grammarNote: null,
+        suggestedReplies: ["Wie geht es Ihnen?", "Können Sie das wiederholen?"],
+      };
+    }
+
+    return res.json(parsed);
+  } catch (error: any) {
+    console.error("German chat error:", error);
+    return res.status(500).json({
+      error: error?.message || "Failed to get response from AI German Teacher.",
+    });
+  }
+});
+
+// AI Script & Voice-Over Scene Generator endpoint
+app.post("/api/studio/generate-script", async (req, res) => {
+  try {
+    const {
+      topic,
+      tone = "engaging",
+      format = "video_voiceover", // 'video_voiceover' | 'german_dialogue' | 'educational'
+      targetDurationMinutes = 1,
+      language = "German",
+    } = req.body;
+
+    if (!topic || typeof topic !== "string") {
+      return res.status(400).json({ error: "Topic is required." });
+    }
+
+    const ai = getGenAI();
+
+    const systemInstruction = `You are a professional voice-over director and scriptwriter.
+Create a scene-by-scene voice-over script for:
+Topic: "${topic}"
+Format: "${format}"
+Tone: "${tone}"
+Language: "${language}"
+Target length: approx ${targetDurationMinutes} minute(s).
+
+Respond ONLY with valid JSON with this schema:
+{
+  "title": "Title of the project or script",
+  "summary": "Brief summary",
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "sceneTitle": "Intro Hook",
+      "visualDescription": "What appears on screen",
+      "voiceOverText": "Exact text to be spoken by the voice agent",
+      "suggestedVoice": "Kore",
+      "speakingStyle": "Enthusiastic and clear, hook the listener",
+      "estimatedDurationSeconds": 15
+    }
+  ]
+}`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ parts: [{ text: `Generate script for: ${topic}` }] }],
+      config: {
+        systemInstruction,
+        responseMimeType: "application/json",
+        temperature: 0.7,
+      },
+    });
+
+    const responseText = response.text || "{}";
+    const parsed = JSON.parse(responseText);
+    return res.json(parsed);
+  } catch (error: any) {
+    console.error("Script generation error:", error);
+    return res.status(500).json({
+      error: error?.message || "Failed to generate script.",
+    });
+  }
+});
+
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
