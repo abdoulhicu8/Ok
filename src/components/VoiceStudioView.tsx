@@ -1,3 +1,4 @@
+import { apiUrl } from "../api";
 import React, { useState } from "react";
 import {
   Volume2,
@@ -280,7 +281,7 @@ export const VoiceStudioView: React.FC<VoiceStudioViewProps> = ({
     if (!scriptTopicInput.trim()) return;
     setIsGeneratingScenes(true);
     try {
-      const res = await fetch("/api/studio/generate-script", {
+      const res = await fetch(apiUrl("/api/studio/generate-script"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

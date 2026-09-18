@@ -1,3 +1,4 @@
+import { apiUrl } from "../api";
 import React, { useState, useRef, useEffect } from "react";
 import {
   Send,
@@ -77,7 +78,7 @@ export const AITeacherView: React.FC<AITeacherViewProps> = ({
         text: m.text,
       }));
 
-      const res = await fetch("/api/german/chat", {
+      const res = await fetch(apiUrl("/api/german/chat"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

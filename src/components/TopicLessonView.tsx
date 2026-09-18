@@ -1,3 +1,4 @@
+import { apiUrl } from "../api";
 import React, { useState } from "react";
 import {
   ArrowLeft,
@@ -142,7 +143,7 @@ export const TopicLessonView: React.FC<TopicLessonViewProps> = ({
     setEvaluatingSpeech(true);
     setSpeechEvaluation(null);
     try {
-      const res = await fetch("/api/german/evaluate-speaking", {
+      const res = await fetch(apiUrl("/api/german/evaluate-speaking"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -173,7 +174,7 @@ export const TopicLessonView: React.FC<TopicLessonViewProps> = ({
     setEvaluatingWriting(true);
     setWritingFeedback(null);
     try {
-      const res = await fetch("/api/german/evaluate-writing", {
+      const res = await fetch(apiUrl("/api/german/evaluate-writing"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

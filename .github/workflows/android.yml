@@ -2,59 +2,44 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master ] # Triggers when you push to main or master
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      - name: Set up Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22.x'
-          check-latest: true
-          cache: 'npm'
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: 'npm'
 
-      - name: Verify Node.js
-        run: |
-          echo "PATH=$PATH"
-          which node
-          node --version
-          which npm
-          npm --version
-          npx --version
+    - name: Install Dependencies
+      run: npm install
 
-      - name: Install Dependencies
-        run: npm install
+    - name: Build Vite App
+      run: npm run build
 
-      - name: Build Vite App
-        run: npm run build
+    - name: Set up Java JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'zulu'
+        java-version: '17'
 
-      - name: Set up Java JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: '21'
+    - name: Sync Capacitor with Android
+      run: npx cap sync android
 
-      - name: Verify Capacitor
-        run: |
-          node --version
-          npx cap --version
+    - name: Build Android App (Debug APK)
+      run: |
+        cd android
+        ./gradlew assembleDebug
 
-      - name: Sync Capacitor with Android
-        run: npx --no-install cap sync android
-
-      - name: Build Android App (Debug APK)
-        run: |
-          cd android
-          ./gradlew assembleDebug
-
-      - name: Upload APK Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Ok-App-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+    - name: Upload APK Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Ok-App-APK
+        path: android/app/build/outputs/apk/debug/app-debug.apk

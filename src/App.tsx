@@ -27,6 +27,7 @@ import { GermanLearningView } from "./components/GermanLearningView";
 import { AITeacherView } from "./components/AITeacherView";
 import { SettingsView } from "./components/SettingsView";
 import { evaluateStreak } from "./utils/progressUtils";
+import { apiUrl } from "./api";
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<MainTab>("dashboard");
@@ -176,7 +177,7 @@ export default function App() {
     emotion?: EmotionType;
     energy?: EnergyType;
   }): Promise<TTSItem> => {
-    const response = await fetch("/api/tts", {
+    const response = await fetch(apiUrl("/api/tts"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(params),
