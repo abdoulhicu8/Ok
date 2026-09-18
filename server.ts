@@ -244,7 +244,7 @@ Always keep German sentences natural, encouraging, and tailored to level ${level
     ];
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.6-flash",
       contents,
       config: {
         systemInstruction,
@@ -320,7 +320,7 @@ Respond ONLY with valid JSON with this schema:
 }`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.6-flash",
       contents: [{ parts: [{ text: `Generate script for: ${topic}` }] }],
       config: {
         systemInstruction,
@@ -382,7 +382,7 @@ Return valid JSON with this exact schema:
 }`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.6-flash",
       contents: [{ parts: [{ text: `Evaluate this German text: ${userText}` }] }],
       config: {
         systemInstruction,
@@ -432,7 +432,7 @@ Return valid JSON with this exact schema:
 }`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.6-flash",
       contents: [{ parts: [{ text: `Evaluate this spoken response: ${userSpeechText}` }] }],
       config: {
         systemInstruction,
